@@ -46,6 +46,16 @@ function colorFor(category: string | null) {
 }
 
 export function WeeklyTimeline({ blocks }: { blocks: TimelineBlock[] }) {
+  // Deduplicate blocks by ID to prevent key collisions
+  const uniqueBlocks = React.useMemo(() => {
+    const seen = new Set<string>();
+    return blocks.filter((b) => {
+      if (seen.has(b.id)) return false;
+      seen.add(b.id);
+      return true;
+    });
+  }, [blocks]);
+
   // Build 7 days starting today
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -57,10 +67,10 @@ export function WeeklyTimeline({ blocks }: { blocks: TimelineBlock[] }) {
 
   // Group blocks by day
   const blocksByDay = days.map((day) =>
-    blocks.filter((b) => isSameDay(new Date(b.startAt), day))
+    uniqueBlocks.filter((b) => isSameDay(new Date(b.startAt), day))
   );
 
-  const totalThisWeek = blocks.reduce(
+  const totalThisWeek = uniqueBlocks.reduce(
     (s, b) => s + blockDurationMinutes(b.startAt, b.endAt),
     0
   );
