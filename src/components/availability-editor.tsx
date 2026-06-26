@@ -80,85 +80,104 @@ export function AvailabilityEditor({
           return (
             <li
               key={idx}
-              className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-center"
+              className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-center sm:gap-2"
             >
-              <div className="flex items-center gap-2">
-                {isRecurring ? (
-                  <Repeat className="h-4 w-4 text-primary" />
-                ) : (
-                  <CalendarDays className="h-4 w-4 text-primary" />
-                )}
-                <Switch
-                  checked={isRecurring}
-                  onCheckedChange={(checked) =>
-                    update(idx, {
-                      dayOfWeek: checked ? 1 : null,
-                      specificDate: checked
-                        ? null
-                        : new Date(Date.now() + 86400000).toISOString(),
-                    })
-                  }
-                  aria-label="Toggle recurring vs one-off"
-                />
-                <span className="text-xs text-muted-foreground">
-                  {isRecurring ? 'Weekly' : 'One-off'}
-                </span>
+              {/* Header row for mobile: switch and delete button */}
+              <div className="flex items-center justify-between w-full sm:w-auto gap-2">
+                <div className="flex items-center gap-2">
+                  {isRecurring ? (
+                    <Repeat className="h-4 w-4 text-primary" />
+                  ) : (
+                    <CalendarDays className="h-4 w-4 text-primary" />
+                  )}
+                  <Switch
+                    checked={isRecurring}
+                    onCheckedChange={(checked) =>
+                      update(idx, {
+                        dayOfWeek: checked ? 1 : null,
+                        specificDate: checked
+                          ? null
+                          : new Date(Date.now() + 86400000).toISOString(),
+                      })
+                    }
+                    aria-label="Toggle recurring vs one-off"
+                  />
+                  <span className="text-xs text-muted-foreground font-medium">
+                    {isRecurring ? 'Weekly' : 'One-off'}
+                  </span>
+                </div>
+                
+                {/* Delete button on mobile only */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive sm:hidden"
+                  onClick={() => remove(idx)}
+                  aria-label="Remove availability"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
 
-              {isRecurring ? (
-                <Select
-                  value={String(item.dayOfWeek ?? 1)}
-                  onValueChange={(v) => update(idx, { dayOfWeek: Number(v) })}
-                >
-                  <SelectTrigger className="h-9 w-full sm:w-[140px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DAYS_OF_WEEK.map((d) => (
-                      <SelectItem key={d.value} value={String(d.value)}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  type="date"
-                  value={
-                    item.specificDate
-                      ? new Date(item.specificDate).toISOString().slice(0, 10)
-                      : ''
-                  }
-                  onChange={(e) => {
-                    const date = new Date(e.target.value + 'T00:00:00');
-                    update(idx, { specificDate: date.toISOString() });
-                  }}
-                  className="h-9 w-full sm:w-[160px]"
-                />
-              )}
+              {/* Day / Date Selector */}
+              <div className="w-full sm:w-auto">
+                {isRecurring ? (
+                  <Select
+                    value={String(item.dayOfWeek ?? 1)}
+                    onValueChange={(v) => update(idx, { dayOfWeek: Number(v) })}
+                  >
+                    <SelectTrigger className="h-9 w-full sm:w-[130px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DAYS_OF_WEEK.map((d) => (
+                        <SelectItem key={d.value} value={String(d.value)}>
+                          {d.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    type="date"
+                    value={
+                      item.specificDate
+                        ? new Date(item.specificDate).toISOString().slice(0, 10)
+                        : ''
+                    }
+                    onChange={(e) => {
+                      const date = new Date(e.target.value + 'T00:00:00');
+                      update(idx, { specificDate: date.toISOString() });
+                    }}
+                    className="h-9 w-full sm:w-[150px]"
+                  />
+                )}
+              </div>
 
-              <div className="flex items-center gap-1.5">
+              {/* Time inputs */}
+              <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
                 <Input
                   type="time"
                   value={item.startTime ?? '18:00'}
                   onChange={(e) => update(idx, { startTime: e.target.value })}
-                  className="h-9 w-full sm:w-[110px]"
+                  className="h-9 flex-1 sm:w-[100px] sm:flex-none"
                   aria-label="Start time"
                 />
-                <span className="text-xs text-muted-foreground">to</span>
+                <span className="text-xs text-muted-foreground px-1">to</span>
                 <Input
                   type="time"
                   value={item.endTime ?? '20:00'}
                   onChange={(e) => update(idx, { endTime: e.target.value })}
-                  className="h-9 w-full sm:w-[110px]"
+                  className="h-9 flex-1 sm:w-[100px] sm:flex-none"
                   aria-label="End time"
                 />
               </div>
 
+              {/* Delete button on desktop only */}
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                className="hidden sm:inline-flex h-9 w-9 text-muted-foreground hover:text-destructive shrink-0"
                 onClick={() => remove(idx)}
                 aria-label="Remove availability"
               >
