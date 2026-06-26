@@ -95,7 +95,7 @@ export default function NewGoalPage() {
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['goals'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
-      router.push(`/goals/${created.goal.id}`);
+      router.push(`/goals/${created.goal.id}?new=true`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -128,7 +128,7 @@ export default function NewGoalPage() {
       toast.success('Goal created from template.');
       qc.invalidateQueries({ queryKey: ['goals'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
-      router.push(`/goals/${res.goal.id}`);
+      router.push(`/goals/${res.goal.id}?new=true`);
     },
     onError: (e: Error) => toast.error(e.message),
   });

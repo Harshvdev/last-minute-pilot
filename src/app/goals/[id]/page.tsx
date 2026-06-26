@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -60,6 +60,14 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { RiskBadge } from '@/components/risk-badge';
 import { ProgressBar } from '@/components/progress-bar';
 import { TaskReorderList } from '@/components/task-reorder-list';
@@ -148,6 +156,11 @@ export default function GoalDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
+  const isNew = searchParams.get('new') === 'true';
+
+  const [showSetupPrompt, setShowSetupPrompt] = React.useState(false);
+  const [modalItems, setModalItems] = React.useState<AvailabilityItem[]>([]);
 
   const { data, isLoading, refetch, isFetching } = useQuery<{ goal: GoalDetail }>({
     queryKey: ['goal', id],
@@ -206,6 +219,36 @@ export default function GoalDetailPage() {
     },
     onError: (e: Error) => toast.error(`Risk check failed: ${e.message}`),
   });
+
+  const saveAvailabilityMutation = useMutation({
+    mutationFn: (newItems: AvailabilityItem[]) =>
+      api(`/api/goals/${id}/availability`, {
+        method: 'PUT',
+        body: JSON.stringify({ items: newItems }),
+      }),
+    onSuccess: () => {
+      toast.success('Availability configured');
+      qc.invalidateQueries({ queryKey: ['goal', id] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      rescheduleMutation.mutate();
+      setShowSetupPrompt(false);
+    },
+    onError: (e: Error) => toast.error(`Failed to save availability: ${e.message}`),
+  });
+
+  React.useEffect(() => {
+    if (goal && isNew && goal.availability.length === 0) {
+      setShowSetupPrompt(true);
+      setModalItems([
+        {
+          dayOfWeek: 1,
+          startTime: '18:00',
+          endTime: '20:00',
+          specificDate: null,
+        },
+      ]);
+    }
+  }, [goal, isNew]);
 
   if (isLoading) {
     return (
@@ -584,6 +627,40 @@ export default function GoalDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Set Availability Modal (Onboarding Popup right after goal creation) */}
+      <Dialog open={showSetupPrompt} onOpenChange={setShowSetupPrompt}>
+        <DialogContent className="max-w-[calc(100%-1.5rem)] sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Set your availability</DialogTitle>
+            <DialogDescription>
+              To schedule tasks and estimate schedule risk, the copilot needs to know when you can work on this goal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <AvailabilityEditor items={modalItems} onChange={setModalItems} />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="ghost"
+              onClick={() => setShowSetupPrompt(false)}
+              disabled={saveAvailabilityMutation.isPending}
+            >
+              Skip
+            </Button>
+            <Button
+              onClick={() => saveAvailabilityMutation.mutate(modalItems)}
+              disabled={saveAvailabilityMutation.isPending}
+              className="gap-1.5"
+            >
+              {saveAvailabilityMutation.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+              Save & Schedule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
