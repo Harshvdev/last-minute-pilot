@@ -308,7 +308,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </kbd>
               </Button>
               <a
-                href="https://github.com"
+                href="https://github.com/Harshvdev/last-minute-pilot"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hidden xl:inline-flex"
