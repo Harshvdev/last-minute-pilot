@@ -318,12 +318,12 @@ export async function breakdownGoal(input: {
     'Respond with VALID JSON ONLY — no markdown, no preamble, no comments.',
     'Schema: { "tasks": [{ "title": string, "description"?: string, "estimatedMinutes": number, "dependsOn"?: number }], "rationale"?: string }',
     'Rules:',
-    '- 3 to 12 tasks total.',
+    '- 1 to 12 tasks total. For simple, quick chores (e.g., watering plants, taking out trash), use 1 to 3 tasks. For complex projects, use more.',
     '- Each title is a single action starting with a verb, max 80 chars.',
-    '- estimatedMinutes is an integer >= 15 and <= 480 (8 hours).',
+    '- estimatedMinutes is an integer >= 5 and <= 480 (8 hours). Use short durations (e.g., 5-10 minutes) for easy steps.',
     '- dependsOn is the 0-based index of a task that must finish first, or null/omitted.',
     '- Order tasks in a sensible execution sequence.',
-    '- Be realistic about effort. Do not pad.',
+    '- Be extremely realistic about effort. Do not pad or inflate durations. The total time for all tasks combined should match how long a normal person takes to complete the goal.',
   ].join('\n');
 
   const user = [
