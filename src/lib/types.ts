@@ -95,3 +95,23 @@ export interface GoalBreakdown {
   tasks: TaskDraft[];
   rationale?: string;
 }
+
+export interface GoalClarificationQuestion {
+  id: string;
+  text: string;
+  options?: string[] | null;
+}
+
+export interface GoalClarificationResponse {
+  questionId: string;
+  answer?: string | null;
+  skipped?: boolean;
+}
+
+export interface GoalAIResult {
+  confidence: 'high' | 'low';
+  question?: GoalClarificationQuestion | null;
+  tasks?: TaskDraft[] | null;
+  assumptions?: string[] | null;
+  rationale?: string | null;
+}

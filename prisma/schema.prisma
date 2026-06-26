@@ -110,6 +110,7 @@ model Goal {
   priority    Int       @default(0) // higher = more important; manual sorting
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  aiAssumptions Json?
 
   availability    Availability[]
   tasks           Task[]

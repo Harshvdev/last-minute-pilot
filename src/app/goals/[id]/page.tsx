@@ -103,6 +103,7 @@ interface GoalDetail {
   availability: AvailabilityDetail[];
   riskAssessments: RiskAssessmentDetail[];
   notes?: NoteDetail[];
+  aiAssumptions?: string[] | null;
 }
 
 interface NoteDetail {
@@ -162,6 +163,11 @@ export default function GoalDetailPage() {
   const [showSetupPrompt, setShowSetupPrompt] = React.useState(false);
   const [modalItems, setModalItems] = React.useState<AvailabilityItem[]>([]);
 
+  // AI Planning Assistant States
+  const [showPlanningAssistant, setShowPlanningAssistant] = React.useState(false);
+  const [currentQuestion, setCurrentQuestion] = React.useState<{ id: string; text: string; options?: string[] | null } | null>(null);
+  const [answers, setAnswers] = React.useState<{ questionId: string; answer?: string | null; skipped?: boolean }[]>([]);
+
   const { data, isLoading, refetch, isFetching } = useQuery<{ goal: GoalDetail }>({
     queryKey: ['goal', id],
     queryFn: () => api(`/api/goals/${id}`),
@@ -170,21 +176,52 @@ export default function GoalDetailPage() {
 
   const goal = data?.goal;
 
+  interface BreakdownMutationParams {
+    answers?: { questionId: string; answer?: string | null; skipped?: boolean }[];
+    force?: boolean;
+  }
+
   const breakdownMutation = useMutation({
-    mutationFn: () =>
-      api<{ tasks: unknown[]; rationale: string | null }>(
-        `/api/goals/${id}/ai-breakdown`,
-        { method: 'POST', body: JSON.stringify({}) }
-      ),
-    onSuccess: (res: { tasks: unknown[]; rationale: string | null }) => {
-      toast.success(
-        `AI drafted ${res.tasks.length} task${res.tasks.length === 1 ? '' : 's'}.`
-      );
-      qc.invalidateQueries({ queryKey: ['goal', id] });
-      qc.invalidateQueries({ queryKey: ['stats'] });
+    mutationFn: (params: BreakdownMutationParams = {}) =>
+      api<{
+        status: 'need_clarification' | 'completed';
+        question?: { id: string; text: string; options?: string[] | null } | null;
+        tasks?: unknown[];
+        assumptions?: string[] | null;
+        rationale?: string | null;
+      }>(`/api/goals/${id}/ai-breakdown`, {
+        method: 'POST',
+        body: JSON.stringify({
+          answers: params.answers,
+          force: params.force,
+        }),
+      }),
+    onSuccess: (res) => {
+      if (res.status === 'need_clarification' && res.question) {
+        setCurrentQuestion(res.question);
+      } else {
+        setCurrentQuestion(null);
+        setShowPlanningAssistant(false);
+        toast.success(
+          `AI drafted ${res.tasks?.length ?? 0} task${res.tasks?.length === 1 ? '' : 's'}.`
+        );
+        qc.invalidateQueries({ queryKey: ['goal', id] });
+        qc.invalidateQueries({ queryKey: ['stats'] });
+      }
     },
-    onError: (e: Error) => toast.error(`Breakdown failed: ${e.message}`),
+    onError: (e: Error) => {
+      setCurrentQuestion(null);
+      setShowPlanningAssistant(false);
+      toast.error(`Breakdown failed: ${e.message}`);
+    },
   });
+
+  const startPlanningAssistant = () => {
+    setAnswers([]);
+    setCurrentQuestion(null);
+    setShowPlanningAssistant(true);
+    breakdownMutation.mutate({ answers: [] });
+  };
 
   const rescheduleMutation = useMutation({
     mutationFn: () =>
@@ -236,8 +273,20 @@ export default function GoalDetailPage() {
     onError: (e: Error) => toast.error(`Failed to save availability: ${e.message}`),
   });
 
+  // On mount auto-trigger breakdown if requested
   React.useEffect(() => {
-    if (goal && isNew && goal.availability.length === 0) {
+    const trigger = searchParams.get('triggerBreakdown') === 'true';
+    if (trigger && goal && goal.tasks.length === 0 && !showPlanningAssistant && answers.length === 0) {
+      startPlanningAssistant();
+    }
+  }, [goal, searchParams]);
+
+  // On onboarding: trigger availability editor ONLY when the breakdown is completed
+  React.useEffect(() => {
+    const trigger = searchParams.get('triggerBreakdown') === 'true';
+    const isPlanningInProgress = trigger && goal && goal.tasks.length === 0;
+
+    if (goal && isNew && goal.availability.length === 0 && !showPlanningAssistant && !isPlanningInProgress) {
       setShowSetupPrompt(true);
       setModalItems([
         {
@@ -248,7 +297,7 @@ export default function GoalDetailPage() {
         },
       ]);
     }
-  }, [goal, isNew]);
+  }, [goal, isNew, showPlanningAssistant, searchParams]);
 
   if (isLoading) {
     return (
@@ -480,6 +529,26 @@ export default function GoalDetailPage() {
 
         {/* Tasks tab */}
         <TabsContent value="tasks" className="mt-4 space-y-3">
+          {goal.aiAssumptions && Array.isArray(goal.aiAssumptions) && goal.aiAssumptions.length > 0 && (
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-3 text-primary/10 transition-transform group-hover:scale-110">
+                <Sparkles className="h-20 w-20 -mr-6 -mt-6" />
+              </div>
+              <div className="flex items-center gap-2 font-semibold text-primary mb-1.5">
+                <Sparkles className="h-4 w-4" />
+                AI Assumptions
+              </div>
+              <ul className="list-disc pl-5 text-muted-foreground space-y-1 text-xs">
+                {goal.aiAssumptions.map((ass: string, idx: number) => (
+                  <li key={idx}>{ass}</li>
+                ))}
+              </ul>
+              <p className="mt-3 text-[0.6875rem] text-muted-foreground italic border-t border-primary/10 pt-2">
+                If these assumptions don&apos;t match your expectations, update the goal description to clarify and click <strong>AI breakdown</strong> to replan.
+              </p>
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
               {totalTasks === 0
@@ -490,7 +559,7 @@ export default function GoalDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => breakdownMutation.mutate()}
+                onClick={startPlanningAssistant}
                 disabled={breakdownMutation.isPending}
                 className="gap-1.5"
               >
@@ -520,7 +589,7 @@ export default function GoalDetailPage() {
                   </div>
                   <Button
                     size="sm"
-                    onClick={() => breakdownMutation.mutate()}
+                    onClick={startPlanningAssistant}
                     disabled={breakdownMutation.isPending}
                     className="gap-1.5"
                   >
@@ -627,6 +696,161 @@ export default function GoalDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* AI Planning Assistant Modal */}
+      <Dialog
+        open={showPlanningAssistant}
+        onOpenChange={(open) => {
+          if (!open && !breakdownMutation.isPending) {
+            setShowPlanningAssistant(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-[calc(100%-1.5rem)] sm:max-w-md max-h-[92vh] overflow-y-auto p-5 sm:p-6">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-primary">
+              <Sparkles className="h-5 w-5 animate-pulse" />
+              <DialogTitle className="text-lg font-semibold">AI Planning Assistant</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs">
+              Refining task breakdown for your goal: <strong className="text-foreground">{goal.title}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            {breakdownMutation.isPending && !currentQuestion ? (
+              <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm font-medium text-muted-foreground">AI is analyzing goal details...</p>
+              </div>
+            ) : currentQuestion ? (
+              <div className="space-y-4">
+                {/* Question Display */}
+                <div className="space-y-2">
+                  <span className="text-[0.625rem] font-semibold uppercase tracking-wider text-primary">
+                    Clarification Turn {answers.length + 1} of 3
+                  </span>
+                  <p className="text-sm font-medium leading-relaxed text-foreground">
+                    {currentQuestion.text}
+                  </p>
+                </div>
+
+                {/* Option Pills */}
+                {currentQuestion.options && currentQuestion.options.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {currentQuestion.options.map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => {
+                          const newAnswers = [...answers, { questionId: currentQuestion.id, answer: opt }];
+                          setAnswers(newAnswers);
+                          setCurrentQuestion(null);
+                          breakdownMutation.mutate({ answers: newAnswers });
+                        }}
+                        disabled={breakdownMutation.isPending}
+                        className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-50"
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Custom Text input */}
+                <div className="space-y-1.5 pt-2">
+                  <Label htmlFor="customAnswer" className="text-xs font-medium text-muted-foreground">
+                    Or type your own details:
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="customAnswer"
+                      placeholder="Type details here..."
+                      disabled={breakdownMutation.isPending}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = e.currentTarget.value.trim();
+                          if (val) {
+                            const newAnswers = [...answers, { questionId: currentQuestion.id, answer: val }];
+                            setAnswers(newAnswers);
+                            setCurrentQuestion(null);
+                            breakdownMutation.mutate({ answers: newAnswers });
+                          }
+                        }
+                      }}
+                      className="text-xs h-9"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={breakdownMutation.isPending}
+                      onClick={() => {
+                        const inputEl = document.getElementById('customAnswer') as HTMLInputElement;
+                        const val = inputEl?.value.trim();
+                        if (val) {
+                          const newAnswers = [...answers, { questionId: currentQuestion.id, answer: val }];
+                          setAnswers(newAnswers);
+                          setCurrentQuestion(null);
+                          breakdownMutation.mutate({ answers: newAnswers });
+                        }
+                      }}
+                    >
+                      {breakdownMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        'Submit'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-6 space-y-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm font-medium text-muted-foreground">Generating final tasks plan...</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex flex-row items-center justify-between border-t border-border/40 pt-4 mt-2">
+            {currentQuestion ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={breakdownMutation.isPending}
+                  onClick={() => {
+                    const newAnswers = [...answers, { questionId: currentQuestion.id, skipped: true }];
+                    setAnswers(newAnswers);
+                    setCurrentQuestion(null);
+                    breakdownMutation.mutate({ answers: newAnswers });
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Skip question
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={breakdownMutation.isPending}
+                  onClick={() => {
+                    setCurrentQuestion(null);
+                    breakdownMutation.mutate({ answers, force: true });
+                  }}
+                  className="text-xs border-dashed gap-1"
+                >
+                  <Sparkles className="h-3 w-3 text-primary" />
+                  Skip all & plan
+                </Button>
+              </>
+            ) : (
+              <div className="w-full text-center text-xs text-muted-foreground">
+                Analyzing requirements...
+              </div>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Set Availability Modal (Onboarding Popup right after goal creation) */}
       <Dialog open={showSetupPrompt} onOpenChange={setShowSetupPrompt}>

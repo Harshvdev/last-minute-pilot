@@ -75,27 +75,15 @@ export default function NewGoalPage() {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      if (autoBreakdown) {
-        // Fire breakdown; do not block navigation on it failing.
-        try {
-          await api(`/api/goals/${created.goal.id}/ai-breakdown`, {
-            method: 'POST',
-            body: JSON.stringify({ rawInput: rawInput.trim() || undefined }),
-          });
-          toast.success('Goal created. AI drafted your tasks.');
-        } catch (e) {
-          console.error(e);
-          toast.success('Goal created. You can run AI breakdown from the goal page.');
-        }
-      } else {
-        toast.success('Goal created.');
-      }
       return created;
     },
     onSuccess: (created) => {
+      toast.success('Goal created.');
       qc.invalidateQueries({ queryKey: ['goals'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
-      router.push(`/goals/${created.goal.id}?new=true`);
+      router.push(
+        `/goals/${created.goal.id}?new=true${autoBreakdown ? '&triggerBreakdown=true' : ''}`
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -108,27 +96,19 @@ export default function NewGoalPage() {
           method: 'POST',
           body: JSON.stringify({
             templateId: template.id,
-            runBreakdown: autoBreakdown,
+            runBreakdown: false,
           }),
         }
       );
-      if (res.runBreakdown) {
-        try {
-          await api(`/api/goals/${res.goal.id}/ai-breakdown`, {
-            method: 'POST',
-            body: JSON.stringify({ rawInput: template.rawInput }),
-          });
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      return res;
+      return { ...res, runBreakdown: autoBreakdown };
     },
     onSuccess: (res) => {
       toast.success('Goal created from template.');
       qc.invalidateQueries({ queryKey: ['goals'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
-      router.push(`/goals/${res.goal.id}?new=true`);
+      router.push(
+        `/goals/${res.goal.id}?new=true${res.runBreakdown ? '&triggerBreakdown=true' : ''}`
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });

@@ -14,7 +14,13 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import Groq from 'groq-sdk';
 import { z } from 'zod';
-import type { GoalBreakdown, TaskDraft } from '@/lib/types';
+import type {
+  GoalBreakdown,
+  TaskDraft,
+  GoalClarificationQuestion,
+  GoalClarificationResponse,
+  GoalAIResult,
+} from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Schemas (Zod validation before touching the database)
@@ -27,8 +33,17 @@ const TaskDraftSchema = z.object({
   dependsOn: z.number().int().min(0).optional().nullable(),
 });
 
-const BreakdownSchema = z.object({
-  tasks: z.array(TaskDraftSchema).min(1).max(20),
+const ClarificationQuestionSchema = z.object({
+  id: z.string().min(1).max(100),
+  text: z.string().min(1).max(300),
+  options: z.array(z.string().min(1).max(100)).optional().nullable(),
+});
+
+const AIResultSchema = z.object({
+  confidence: z.enum(['high', 'low']),
+  question: ClarificationQuestionSchema.optional().nullable(),
+  tasks: z.array(TaskDraftSchema).optional().nullable(),
+  assumptions: z.array(z.string()).optional().nullable(),
   rationale: z.string().max(2000).optional().nullable(),
 });
 
@@ -125,46 +140,100 @@ class StubProvider implements AIProvider {
   name = 'Stub';
 
   async generateJSON(systemPrompt: string, userPrompt: string): Promise<string> {
-    // If the prompt mentions "breakdown", return a generic task list.
-    // Otherwise return a generic risk explanation.
     if (systemPrompt.includes('planning engine')) {
+      const isIndianRights = userPrompt.includes('Indian civilian rights') || userPrompt.includes('indian law');
+      const hasAnswers = userPrompt.includes('Question ID:') || userPrompt.includes('Answer:');
+      const isForced = userPrompt.includes('Force final plan: true');
+
+      // Clarification check: ask question only if not forced, no answers, and it's the Indian rights case
+      if (isIndianRights && !hasAnswers && !isForced) {
+        return JSON.stringify({
+          confidence: 'low',
+          question: {
+            id: 'assignment_type',
+            text: 'Is this a school assignment, college assignment, or professional report?',
+            options: ['School assignment', 'College assignment', 'Professional report']
+          }
+        });
+      }
+
+      // Generate the plan (with assumptions)
+      if (isIndianRights) {
+        return JSON.stringify({
+          confidence: 'high',
+          tasks: [
+            {
+              title: 'Research fundamental civilian rights under the Indian Constitution',
+              estimatedMinutes: 180,
+              description: 'Read Part III of the Constitution, focusing on civilian rights.'
+            },
+            {
+              title: 'Draft the detailed outline of the 24-page report',
+              estimatedMinutes: 90,
+              description: 'Structure sections: Introduction, Constitutional Basis, Key Rights, Remedies, Conclusion.'
+            },
+            {
+              title: 'Write the introduction and Part III analysis sections',
+              estimatedMinutes: 180,
+              description: 'Draft pages covering civilian rights and constitutional articles.'
+            },
+            {
+              title: 'Write enforcement mechanisms and legal remedies sections',
+              estimatedMinutes: 120,
+              description: 'Draft sections about article 32, habeas corpus, and other remedies.'
+            },
+            {
+              title: 'Review, format, and edit the final document',
+              estimatedMinutes: 90,
+              description: 'Format to 24 A4 pages and correct any errors.'
+            }
+          ],
+          assumptions: [
+            'Assumed school assignment level of depth based on 10th grade context.',
+            'Assumed written document format (24 A4 pages).',
+            'Assumed a total time of 11 hours is appropriate.'
+          ],
+          rationale: 'High-confidence plan tailored for a school assignment on civilian rights.'
+        });
+      }
+
+      // Default generic fallback plan
       return JSON.stringify({
+        confidence: 'high',
         tasks: [
           {
-            title: 'Define the scope',
-            estimatedMinutes: 30,
-            description: 'Clarify exactly what needs to be done.',
-          },
-          {
-            title: 'Break it into steps',
-            estimatedMinutes: 45,
-            description: 'List the individual steps required.',
-          },
-          {
-            title: 'Do the first step',
+            title: 'Define report scope and search legal sources',
             estimatedMinutes: 60,
-            description: 'Start with the first item on your list.',
+            description: 'Clarify exactly what needs to be done.'
+          },
+          {
+            title: 'Create detailed report outline',
+            estimatedMinutes: 90,
+            description: 'List the individual steps required.'
+          },
+          {
+            title: 'Draft the core content sections',
+            estimatedMinutes: 180,
+            description: 'Start drafting the main sections of the goal.'
           },
           {
             title: 'Review and iterate',
-            estimatedMinutes: 30,
-            description: 'Check your work and adjust as needed.',
-          },
-          {
-            title: 'Finalize and submit',
-            estimatedMinutes: 20,
-            description: 'Wrap up and deliver.',
-          },
+            estimatedMinutes: 90,
+            description: 'Check your work and adjust as needed.'
+          }
         ],
-        rationale:
-          'Generic 5-step breakdown (stub provider — set GEMINI_API_KEY + GROQ_API_KEY for real AI output).',
+        assumptions: [
+          'Assumed a general audience.',
+          'Assumed study/project style goals.'
+        ],
+        rationale: 'Generic planning breakdown.'
       });
     }
     return JSON.stringify({
       headline: 'You are behind schedule',
       body: 'Based on the remaining work and available time, you may not finish by the deadline. Consider reducing scope or increasing available time blocks.',
       suggestedAction:
-        'Re-run the scheduler to fit remaining tasks into your available time.',
+        'Re-run the scheduler to fit remaining tasks into your available time.'
     });
   }
 }
@@ -311,41 +380,86 @@ export async function breakdownGoal(input: {
   goalType: string;
   deadline: string | null;
   category?: string | null;
-}): Promise<GoalBreakdown> {
+  answers?: GoalClarificationResponse[];
+  forcePlan?: boolean;
+}): Promise<GoalAIResult> {
   const system = [
     'You are a planning engine for a deadline-driven productivity copilot.',
-    'Break the user\'s goal into concrete, actionable tasks.',
+    'Your goal is to break the user\'s goal into concrete, actionable tasks, OR ask clarifying questions if confidence is low.',
     'Respond with VALID JSON ONLY — no markdown, no preamble, no comments.',
-    'Schema: { "tasks": [{ "title": string, "description"?: string, "estimatedMinutes": number, "dependsOn"?: number }], "rationale"?: string }',
+    'Schema:',
+    '{',
+    '  "confidence": "high" | "low",',
+    '  "question": { "id": string, "text": string, "options"?: string[] } | null,',
+    '  "tasks": [{ "title": string, "description"?: string, "estimatedMinutes": number, "dependsOn"?: number }] | null,',
+    '  "assumptions": string[] | null,',
+    '  "rationale"?: string',
+    '}',
     'Rules:',
-    '- 1 to 12 tasks total. For simple, quick chores (e.g., watering plants, taking out trash), use 1 to 3 tasks. For complex projects, use more.',
-    '- Each title is a single action starting with a verb, max 80 chars.',
-    '- estimatedMinutes is an integer >= 5 and <= 480 (8 hours). Use short durations (e.g., 5-10 minutes) for easy steps.',
-    '- dependsOn is the 0-based index of a task that must finish first, or null/omitted.',
-    '- Order tasks in a sensible execution sequence.',
-    '- Be extremely realistic about effort. Do not pad or inflate durations. The total time for all tasks combined should match how long a normal person takes to complete the goal.',
+    '1. First, analyze the user\'s input. Extract what you can (e.g. deliverable, length, topic).',
+    '2. If you have enough information to create a precise, realistic, non-padded plan, return confidence "high", question null, and the "tasks" array (1 to 12 tasks total).',
+    '3. If the input is ambiguous or lacks critical context (e.g., expected depth, format, or level of detail) causing your confidence to be low for an accurate plan, return confidence "low" and exactly ONE clarifying question (with a short camel_case/snake_case id, clear text, and optional choice options), tasks null, assumptions null.',
+    '4. Do NOT always ask follow-up questions. Extract what you can first. Only ask a question if you cannot plan realistically without it.',
+    '5. If the user has already answered/skipped clarifying questions (provided in the user prompt), integrate those answers. Your confidence should be "high" unless you truly need one more critical clarification (subject to the backend hard safety limit). Do not re-ask questions that have already been answered or skipped.',
+    '6. If you are instructed to force a final plan (Force final plan: true), you MUST return confidence "high", question null, and the "tasks" array.',
+    '7. For simple chores (e.g., watering plants, taking out trash), use 1 to 3 tasks and always output high confidence immediately. Do not ask questions for simple tasks.',
+    '8. Task rules: each title starts with a verb (max 80 chars), estimatedMinutes is between 5 and 480 (8 hours), dependsOn is a 0-based index of a prerequisite task in the same array, and order them in sensible execution sequence.',
+    '9. Be extremely realistic about effort. Do not pad or inflate durations. The total time for all tasks combined should match how long a normal person takes to complete the goal.',
+    '10. If confidence is high, also return a list of "assumptions" you made about the goal (e.g., target depth, format) that were not explicitly stated, so the user can verify them.',
   ].join('\n');
 
-  const user = [
+  const userParts = [
     `Goal title: ${input.title}`,
     `Type: ${input.goalType}`,
     input.deadline ? `Deadline: ${input.deadline}` : 'Deadline: none (habit)',
     input.category ? `Category: ${input.category}` : '',
     `Original user description:\n${input.rawInput || input.title}`,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  ];
+
+  if (input.answers && input.answers.length > 0) {
+    userParts.push('\nPrevious Clarifying Questions and User Responses:');
+    input.answers.forEach((ans) => {
+      userParts.push(`- Question ID: ${ans.questionId}`);
+      if (ans.skipped) {
+        userParts.push('  Status: User skipped this question (proceed without this detail).');
+      } else {
+        userParts.push(`  Answer: ${ans.answer}`);
+      }
+    });
+  }
+
+  if (input.forcePlan) {
+    userParts.push('\nForce final plan: true. You MUST generate the task list now. Do NOT ask any more questions.');
+  }
+
+  const user = userParts.filter(Boolean).join('\n');
 
   const raw = await generateJSONWithFallback(system, user);
   const parsed = parseLenient(raw);
-  const validated = BreakdownSchema.parse(parsed);
-  const tasks: TaskDraft[] = validated.tasks.map((t) => ({
-    title: t.title,
-    description: t.description ?? undefined,
-    estimatedMinutes: t.estimatedMinutes,
-    dependsOn: t.dependsOn ?? undefined,
-  }));
-  return { tasks, rationale: validated.rationale ?? undefined };
+  const validated = AIResultSchema.parse(parsed);
+
+  const result: GoalAIResult = {
+    confidence: validated.confidence,
+    question: validated.question
+      ? {
+          id: validated.question.id,
+          text: validated.question.text,
+          options: validated.question.options ?? null,
+        }
+      : null,
+    tasks: validated.tasks
+      ? validated.tasks.map((t) => ({
+          title: t.title,
+          description: t.description ?? undefined,
+          estimatedMinutes: t.estimatedMinutes,
+          dependsOn: t.dependsOn ?? undefined,
+        }))
+      : null,
+    assumptions: validated.assumptions ?? null,
+    rationale: validated.rationale ?? null,
+  };
+
+  return result;
 }
 
 /**
