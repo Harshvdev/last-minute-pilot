@@ -45,6 +45,7 @@ if (hasGoogleCreds()) {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
           scope: GOOGLE_SCOPES.join(' '),
@@ -62,6 +63,7 @@ if (hasGitHubCreds()) {
     GitHubProvider({
       clientId: process.env.GITHUB_CLIENT_ID!,
       clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true,
     })
   );
 }
@@ -95,6 +97,7 @@ if (providers.length === 0) {
 }
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
   adapter: PrismaAdapter(db),
   session: {
     strategy: 'jwt', // JWT for serverless compatibility (Vercel)
