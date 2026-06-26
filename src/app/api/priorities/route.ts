@@ -62,8 +62,8 @@ export async function GET() {
       id: a.id,
       goalId: a.goalId,
       dayOfWeek: a.dayOfWeek,
-      startTime: a.startTime,
-      endTime: a.endTime,
+      startTime: a.startTime ? (a.startTime instanceof Date ? a.startTime.toISOString().slice(11, 16) : String(a.startTime)) : null,
+      endTime: a.endTime ? (a.endTime instanceof Date ? a.endTime.toISOString().slice(11, 16) : String(a.endTime)) : null,
       specificDate: a.specificDate ? a.specificDate.toISOString() : null,
     }));
     const assessment = assessRisk({
