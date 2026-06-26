@@ -72,7 +72,3 @@ status.
 - **z-ai-web-dev-sdk** as the LLM adapter (single integration point — swap providers in one file)
 - **next-themes** for light/dark mode
 - **TanStack Query** for server state, **date-fns**, **sonner** for toasts
-
-## License
-
-Built from the "Last Minute Pilot" architecture spec.
