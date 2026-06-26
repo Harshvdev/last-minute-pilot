@@ -136,8 +136,8 @@ model Availability {
   goalId       String
   goal         Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
   dayOfWeek    Int?     // 0-6 (Sun-Sat), null if one-off
-  startTime    DateTime? // native Postgres time stored as today's date + time
-  endTime      DateTime?
+  startTime    String?   // "HH:MM"
+  endTime      String?
   specificDate DateTime? // used instead of dayOfWeek for one-off slots (date only)
   createdAt    DateTime @default(now())
 
