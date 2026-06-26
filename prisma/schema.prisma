@@ -66,6 +66,7 @@ model Account {
   token_type        String?
   scope             String?
   id_token          String?
+  refresh_token_expires_in Int?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
