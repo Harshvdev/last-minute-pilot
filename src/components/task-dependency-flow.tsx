@@ -144,7 +144,7 @@ export function TaskDependencyFlow({ tasks, onSelect }: TaskDependencyFlowProps)
                     ) : (
                       <Circle className="h-3 w-3 shrink-0 opacity-50" />
                     )}
-                    <span className="max-w-[10rem] truncate text-xs font-medium sm:max-w-[14rem]">
+                    <span className="max-w-[14rem] sm:max-w-[20rem] truncate text-xs font-medium">
                       {task.title}
                     </span>
                   </button>

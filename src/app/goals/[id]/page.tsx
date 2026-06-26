@@ -1056,10 +1056,10 @@ function TaskList({ goalId, tasks }: { goalId: string; tasks: TaskDetail[] }) {
                       className="flex-1 hover:no-underline px-1 py-2"
                       disabled={false}
                     >
-                      <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                      <div className="flex min-w-0 flex-1 items-start gap-2 text-left pt-0.5">
                         <span
                           className={cn(
-                            'text-[0.625rem] font-semibold tabular-nums',
+                            'text-[0.625rem] font-semibold tabular-nums mt-0.5 shrink-0',
                             isDone ? 'text-muted-foreground/60' : 'text-primary/70'
                           )}
                         >
@@ -1067,7 +1067,7 @@ function TaskList({ goalId, tasks }: { goalId: string; tasks: TaskDetail[] }) {
                         </span>
                         <span
                           className={cn(
-                            'truncate text-sm font-medium',
+                            'text-sm font-medium break-words text-wrap flex-1 pr-2',
                             isDone && 'text-muted-foreground line-through',
                             isInProgress && 'text-foreground'
                           )}
