@@ -376,7 +376,7 @@ function Footer() {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Plane className="h-3.5 w-3.5 text-primary" />
           <span>
-            Last Minute Pilot — plan, monitor, replan. Built mobile-first.
+            Last Minute Pilot — plan, monitor, replan.
           </span>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
