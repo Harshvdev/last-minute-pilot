@@ -18,7 +18,7 @@ import {
 interface Alert {
   id: string;
   type: 'risk' | 'deadline' | 'upcoming' | 'config';
-  severity: 'critical' | 'warning' | 'info';
+  severity: 'critical' | 'high' | 'warning' | 'info';
   goalId: string;
   goalTitle: string;
   title: string;
@@ -40,6 +40,12 @@ const SEVERITY_STYLES = {
     iconColor: 'text-destructive',
     bg: 'bg-destructive/5',
     border: 'border-destructive/20',
+  },
+  high: {
+    icon: AlertTriangle,
+    iconColor: 'text-warning',
+    bg: 'bg-warning/5',
+    border: 'border-warning/20',
   },
   warning: {
     icon: Clock,
