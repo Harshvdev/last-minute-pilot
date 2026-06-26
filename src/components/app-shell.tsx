@@ -15,7 +15,9 @@ import {
   Code,
   Search,
   BarChart3,
+  LogOut,
 } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -191,16 +193,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                 </SheetTitle>
               </SheetHeader>
-              <div className="px-3 pb-6">
-                <NavList onNavigate={() => setMobileOpen(false)} />
-                <div className="mt-6 rounded-lg border border-border bg-muted/40 p-3">
-                  <p className="text-xs font-medium text-foreground">
-                    Stay on track
-                  </p>
-                  <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
-                    Risk is recalculated whenever you log progress. The
-                    scheduler adapts to your remaining free time.
-                  </p>
+              <div className="px-3 pb-6 flex flex-col h-[calc(100vh-80px)] justify-between">
+                <div>
+                  <NavList onNavigate={() => setMobileOpen(false)} />
+                </div>
+                <div className="space-y-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => signOut({ callbackUrl: '/auth/signin' })}
+                  >
+                    <LogOut className="h-[1.15rem] w-[1.15rem] shrink-0" />
+                    Sign out
+                  </Button>
+                  <div className="rounded-lg border border-border bg-muted/40 p-3">
+                    <p className="text-xs font-medium text-foreground">
+                      Stay on track
+                    </p>
+                    <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
+                      Risk is recalculated whenever you log progress. The
+                      scheduler adapts to your remaining free time.
+                    </p>
+                  </div>
                 </div>
               </div>
             </SheetContent>
@@ -230,21 +245,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex h-16 items-center px-5 border-b border-sidebar-border">
             <Brand />
           </div>
-          <div className="flex-1 overflow-y-auto px-3 py-4">
-            <NavList />
-            <div className="mt-6 px-3">
-              <p className="text-[0.6875rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                Status
-              </p>
+          <div className="flex-1 overflow-y-auto px-3 py-4 flex flex-col justify-between">
+            <div className="space-y-4">
+              <NavList />
+              <div className="px-3">
+                <p className="text-[0.6875rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Status
+                </p>
+                <div className="mt-2">
+                  <Badge
+                    variant="outline"
+                    className="bg-success/10 text-success border-success/20 gap-1.5"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                    Copilot online
+                  </Badge>
+                </div>
+              </div>
             </div>
-            <div className="mt-2 px-3">
-              <Badge
-                variant="outline"
-                className="bg-success/10 text-success border-success/20 gap-1.5"
+            <div className="py-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => signOut({ callbackUrl: '/auth/signin' })}
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                Copilot online
-              </Badge>
+                <LogOut className="h-[1.15rem] w-[1.15rem] shrink-0" />
+                Sign out
+              </Button>
             </div>
           </div>
           <div className="border-t border-sidebar-border p-4">
