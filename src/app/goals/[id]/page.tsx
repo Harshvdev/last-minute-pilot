@@ -159,7 +159,10 @@ export default function GoalDetailPage() {
 
   const breakdownMutation = useMutation({
     mutationFn: () =>
-      api(`/api/goals/${id}/ai-breakdown`, { method: 'POST', body: JSON.stringify({}) }),
+      api<{ tasks: unknown[]; rationale: string | null }>(
+        `/api/goals/${id}/ai-breakdown`,
+        { method: 'POST', body: JSON.stringify({}) }
+      ),
     onSuccess: (res: { tasks: unknown[]; rationale: string | null }) => {
       toast.success(
         `AI drafted ${res.tasks.length} task${res.tasks.length === 1 ? '' : 's'}.`
@@ -171,7 +174,11 @@ export default function GoalDetailPage() {
   });
 
   const rescheduleMutation = useMutation({
-    mutationFn: () => api(`/api/goals/${id}/reschedule`, { method: 'POST' }),
+    mutationFn: () =>
+      api<{ scheduled: unknown[]; unscheduled: string[] }>(
+        `/api/goals/${id}/reschedule`,
+        { method: 'POST' }
+      ),
     onSuccess: (res: { scheduled: unknown[]; unscheduled: string[] }) => {
       const planned = res.scheduled.length;
       const missed = res.unscheduled.length;
@@ -456,32 +463,35 @@ export default function GoalDetailPage() {
           </div>
 
           {totalTasks === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">No tasks yet</p>
-                  <p className="text-xs text-muted-foreground">
-                    Run AI breakdown to draft tasks, or add one manually.
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => breakdownMutation.mutate()}
-                  disabled={breakdownMutation.isPending}
-                  className="gap-1.5"
-                >
-                  {breakdownMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  Run AI breakdown
-                </Button>
-              </CardContent>
-            </Card>
+            <div className="space-y-4">
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">No tasks yet</p>
+                    <p className="text-xs text-muted-foreground">
+                      Run AI breakdown to draft tasks, or add one manually below.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => breakdownMutation.mutate()}
+                    disabled={breakdownMutation.isPending}
+                    className="gap-1.5"
+                  >
+                    {breakdownMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
+                    Run AI breakdown
+                  </Button>
+                </CardContent>
+              </Card>
+              <TaskList goalId={id} tasks={[]} />
+            </div>
           ) : (
             <>
               <TaskDependencyFlow
@@ -710,156 +720,158 @@ function TaskList({ goalId, tasks }: { goalId: string; tasks: TaskDetail[] }) {
           onCancel={() => setReorderMode(false)}
         />
       ) : (
-      <Accordion type="multiple" className="space-y-2">
-        {tasks.map((t, idx) => {
-          const isDone = t.status === 'done';
-          const isInProgress = t.status === 'in_progress';
-          const lastLog = t.progressLogs[0];
-          return (
-            <AccordionItem
-              key={t.id}
-              value={t.id}
-              className="overflow-hidden rounded-lg border border-border bg-card data-[state=open]:bg-card"
-            >
-              <div className="flex items-center gap-2 px-3 py-2.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateMutation.mutate({
-                      taskId: t.id,
-                      status: isDone ? 'pending' : 'done',
-                      wasDone: isDone,
-                    })
-                  }
-                  className="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={isDone ? 'Mark as not done' : 'Mark as done'}
+        tasks.length > 0 && (
+          <Accordion type="multiple" className="space-y-2">
+            {tasks.map((t, idx) => {
+              const isDone = t.status === 'done';
+              const isInProgress = t.status === 'in_progress';
+              const lastLog = t.progressLogs[0];
+              return (
+                <AccordionItem
+                  key={t.id}
+                  value={t.id}
+                  className="overflow-hidden rounded-lg border border-border bg-card data-[state=open]:bg-card"
                 >
-                  {isDone ? (
-                    <CheckCircle2 className="h-5 w-5 text-success" />
-                  ) : (
-                    <Circle className="h-5 w-5" />
-                  )}
-                </button>
-                <AccordionTrigger
-                  className="flex-1 hover:no-underline px-1 py-2"
-                  disabled={false}
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                    <span
-                      className={cn(
-                        'text-[0.625rem] font-semibold tabular-nums',
-                        isDone ? 'text-muted-foreground/60' : 'text-primary/70'
-                      )}
+                  <div className="flex items-center gap-2 px-3 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateMutation.mutate({
+                          taskId: t.id,
+                          status: isDone ? 'pending' : 'done',
+                          wasDone: isDone,
+                        })
+                      }
+                      className="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={isDone ? 'Mark as not done' : 'Mark as done'}
                     >
-                      {String(idx + 1).padStart(2, '0')}
-                    </span>
-                    <span
-                      className={cn(
-                        'truncate text-sm font-medium',
-                        isDone && 'text-muted-foreground line-through',
-                        isInProgress && 'text-foreground'
+                      {isDone ? (
+                        <CheckCircle2 className="h-5 w-5 text-success" />
+                      ) : (
+                        <Circle className="h-5 w-5" />
                       )}
+                    </button>
+                    <AccordionTrigger
+                      className="flex-1 hover:no-underline px-1 py-2"
+                      disabled={false}
                     >
-                      {t.title}
-                    </span>
-                    {t.dependsOnId && (
-                      <span
-                        className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-warning/40 bg-warning/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-warning-foreground"
-                        title={`Depends on: ${
-                          tasks.find((x) => x.id === t.dependsOnId)?.title ?? 'a previous task'
-                        }`}
-                      >
-                        <Link2 className="h-2.5 w-2.5" />
-                        <span className="hidden sm:inline">blocked</span>
+                      <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                        <span
+                          className={cn(
+                            'text-[0.625rem] font-semibold tabular-nums',
+                            isDone ? 'text-muted-foreground/60' : 'text-primary/70'
+                          )}
+                        >
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <span
+                          className={cn(
+                            'truncate text-sm font-medium',
+                            isDone && 'text-muted-foreground line-through',
+                            isInProgress && 'text-foreground'
+                          )}
+                        >
+                          {t.title}
+                        </span>
+                        {t.dependsOnId && (
+                          <span
+                            className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-warning/40 bg-warning/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-warning-foreground"
+                            title={`Depends on: ${
+                              tasks.find((x) => x.id === t.dependsOnId)?.title ?? 'a previous task'
+                            }`}
+                          >
+                            <Link2 className="h-2.5 w-2.5" />
+                            <span className="hidden sm:inline">blocked</span>
+                          </span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <span className="hidden text-xs font-medium text-muted-foreground sm:mr-1 sm:inline">
+                        {formatMinutes(t.estimatedMinutes)}
                       </span>
-                    )}
-                  </div>
-                </AccordionTrigger>
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <span className="hidden text-xs font-medium text-muted-foreground sm:mr-1 sm:inline">
-                    {formatMinutes(t.estimatedMinutes)}
-                  </span>
-                  {isInProgress && (
-                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-[0.625rem]">
-                      In progress
-                    </Badge>
-                  )}
-                  <div className="flex flex-col">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 text-muted-foreground/60 hover:text-foreground"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderMutation.mutate({ taskId: t.id, direction: 'up' });
-                      }}
-                      disabled={idx === 0 || reorderMutation.isPending}
-                      aria-label="Move task up"
-                    >
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 text-muted-foreground/60 hover:text-foreground"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderMutation.mutate({ taskId: t.id, direction: 'down' });
-                      }}
-                      disabled={idx === tasks.length - 1 || reorderMutation.isPending}
-                      aria-label="Move task down"
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              <AccordionContent className="px-3 pb-3 pt-0">
-                <div className="space-y-3 border-t border-border pt-3">
-                  {t.description && (
-                    <p className="text-xs text-muted-foreground text-pretty">{t.description}</p>
-                  )}
-                  <ProgressLogger
-                    taskId={t.id}
-                    goalId={goalId}
-                    currentPercent={lastLog?.percentComplete ?? 0}
-                    lastNote={lastLog?.note ?? null}
-                  />
-                  {t.progressLogs.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-muted-foreground">
-                        Recent logs
-                      </p>
-                      <ul className="space-y-1">
-                        {t.progressLogs.slice(0, 3).map((log) => (
-                          <li key={log.id} className="text-xs text-muted-foreground">
-                            <span className="font-medium text-foreground">{log.percentComplete}%</span>
-                            {' · '}
-                            {new Date(log.loggedAt).toLocaleString()}
-                            {log.note && <span> · {log.note}</span>}
-                          </li>
-                        ))}
-                      </ul>
+                      {isInProgress && (
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-[0.625rem]">
+                          In progress
+                        </Badge>
+                      )}
+                      <div className="flex flex-col">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 text-muted-foreground/60 hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            reorderMutation.mutate({ taskId: t.id, direction: 'up' });
+                          }}
+                          disabled={idx === 0 || reorderMutation.isPending}
+                          aria-label="Move task up"
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 text-muted-foreground/60 hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            reorderMutation.mutate({ taskId: t.id, direction: 'down' });
+                          }}
+                          disabled={idx === tasks.length - 1 || reorderMutation.isPending}
+                          aria-label="Move task down"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                  )}
-                  <div className="flex justify-end">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteMutation.mutate(t.id)}
-                      disabled={deleteMutation.isPending}
-                      className="gap-1 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Delete task
-                    </Button>
                   </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          );
-        })}
-      </Accordion>
+                  <AccordionContent className="px-3 pb-3 pt-0">
+                    <div className="space-y-3 border-t border-border pt-3">
+                      {t.description && (
+                        <p className="text-xs text-muted-foreground text-pretty">{t.description}</p>
+                      )}
+                      <ProgressLogger
+                        taskId={t.id}
+                        goalId={goalId}
+                        currentPercent={lastLog?.percentComplete ?? 0}
+                        lastNote={lastLog?.note ?? null}
+                      />
+                      {t.progressLogs.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-muted-foreground">
+                            Recent logs
+                          </p>
+                          <ul className="space-y-1">
+                            {t.progressLogs.slice(0, 3).map((log) => (
+                              <li key={log.id} className="text-xs text-muted-foreground">
+                                <span className="font-medium text-foreground">{log.percentComplete}%</span>
+                                {' · '}
+                                {new Date(log.loggedAt).toLocaleString()}
+                                {log.note && <span> · {log.note}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="flex justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteMutation.mutate(t.id)}
+                          disabled={deleteMutation.isPending}
+                          className="gap-1 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete task
+                        </Button>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
+        )
       )}
 
       {/* Add task */}
