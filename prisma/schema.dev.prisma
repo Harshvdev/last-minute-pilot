@@ -1,0 +1,182 @@
+// Last Minute Pilot — Local development schema (SQLite)
+//
+// This is a SQLite mirror of prisma/schema.prisma (PostgreSQL) for local dev
+// without a Postgres/Supabase instance. It uses String for time-only fields
+// (SQLite has no native TIME type) but otherwise mirrors the production schema.
+//
+// To use this for local dev:
+//   bun run db:push:dev
+//
+// To switch back to production (Postgres):
+//   bun run db:push
+//
+// The two schemas are kept in sync manually. When you change one, change both.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+
+  accounts Account[]
+  sessions Session[]
+
+  googleAccessToken    String?
+  googleRefreshToken   String?
+  googleTokenExpiresAt DateTime?
+
+  pushSubscriptions PushSubscription[]
+
+  goals Goal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Goal {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  goalType    String    @default("one_time")
+  deadline    DateTime?
+  status      String    @default("active")
+  rawInput    String?
+  category    String?
+  priority    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  availability    Availability[]
+  tasks           Task[]
+  riskAssessments RiskAssessment[]
+  notes           Note[]
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  goalId    String
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Availability {
+  id           String   @id @default(cuid())
+  goalId       String
+  goal         Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  dayOfWeek    Int?
+  startTime    String?  // "HH:MM" — SQLite has no time-only type
+  endTime      String?
+  specificDate DateTime?
+  createdAt    DateTime @default(now())
+}
+
+model Task {
+  id               String   @id @default(cuid())
+  goalId           String
+  goal             Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  title            String
+  description      String?
+  estimatedMinutes Int      @default(30)
+  priorityScore    Float    @default(0)
+  dependsOnId      String?
+  status           String   @default("pending")
+  orderIndex       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  scheduleBlocks ScheduleBlock[]
+  progressLogs   ProgressLog[]
+}
+
+model ScheduleBlock {
+  id             String   @id @default(cuid())
+  taskId         String
+  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  startAt        DateTime
+  endAt          DateTime
+  status         String   @default("planned")
+  googleEventId  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ProgressLog {
+  id              String   @id @default(cuid())
+  taskId          String
+  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  loggedAt        DateTime @default(now())
+  percentComplete Int      @default(0)
+  note            String?
+}
+
+model RiskAssessment {
+  id              String   @id @default(cuid())
+  goalId          String
+  goal            Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  assessedAt      DateTime @default(now())
+  riskLevel       String
+  reason          String?
+  suggestedAction String?
+  remainingWork   Int      @default(0)
+  remainingTime   Int      @default(0)
+}
+
+model PushSubscription {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint     String   @unique
+  p256dh       String
+  auth         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

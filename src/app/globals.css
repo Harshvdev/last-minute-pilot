@@ -1,0 +1,358 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Light mode — warm stone neutrals, emerald primary, amber warning, rose critical.
+   No gradients. Clean and distraction-free. */
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.99 0.004 95);
+  --foreground: oklch(0.21 0.01 95);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.01 95);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.01 95);
+  --primary: oklch(0.52 0.13 162);
+  --primary-foreground: oklch(0.985 0.005 162);
+  --secondary: oklch(0.96 0.006 95);
+  --secondary-foreground: oklch(0.25 0.01 95);
+  --muted: oklch(0.965 0.005 95);
+  --muted-foreground: oklch(0.52 0.012 95);
+  --accent: oklch(0.95 0.02 162);
+  --accent-foreground: oklch(0.3 0.06 162);
+  --destructive: oklch(0.58 0.22 27);
+  --success: oklch(0.55 0.13 162);
+  --success-foreground: oklch(0.985 0.005 162);
+  --warning: oklch(0.7 0.16 70);
+  --warning-foreground: oklch(0.22 0.04 70);
+  --border: oklch(0.91 0.006 95);
+  --input: oklch(0.91 0.006 95);
+  --ring: oklch(0.52 0.13 162);
+  --chart-1: oklch(0.55 0.13 162);
+  --chart-2: oklch(0.7 0.16 70);
+  --chart-3: oklch(0.58 0.11 195);
+  --chart-4: oklch(0.65 0.18 350);
+  --chart-5: oklch(0.5 0.05 95);
+  --sidebar: oklch(0.985 0.004 95);
+  --sidebar-foreground: oklch(0.21 0.01 95);
+  --sidebar-primary: oklch(0.52 0.13 162);
+  --sidebar-primary-foreground: oklch(0.985 0.005 162);
+  --sidebar-accent: oklch(0.95 0.02 162);
+  --sidebar-accent-foreground: oklch(0.3 0.06 162);
+  --sidebar-border: oklch(0.91 0.006 95);
+  --sidebar-ring: oklch(0.52 0.13 162);
+}
+
+/* Dark mode — warm near-black, emerald stays vivid, amber pops. */
+.dark {
+  --background: oklch(0.16 0.005 95);
+  --foreground: oklch(0.96 0.004 95);
+  --card: oklch(0.205 0.006 95);
+  --card-foreground: oklch(0.96 0.004 95);
+  --popover: oklch(0.205 0.006 95);
+  --popover-foreground: oklch(0.96 0.004 95);
+  --primary: oklch(0.7 0.15 162);
+  --primary-foreground: oklch(0.18 0.03 162);
+  --secondary: oklch(0.27 0.008 95);
+  --secondary-foreground: oklch(0.96 0.004 95);
+  --muted: oklch(0.25 0.006 95);
+  --muted-foreground: oklch(0.7 0.012 95);
+  --accent: oklch(0.3 0.04 162);
+  --accent-foreground: oklch(0.85 0.08 162);
+  --destructive: oklch(0.68 0.19 22);
+  --success: oklch(0.7 0.15 162);
+  --success-foreground: oklch(0.18 0.03 162);
+  --warning: oklch(0.78 0.15 70);
+  --warning-foreground: oklch(0.2 0.04 70);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.7 0.15 162);
+  --chart-1: oklch(0.7 0.15 162);
+  --chart-2: oklch(0.78 0.15 70);
+  --chart-3: oklch(0.68 0.11 195);
+  --chart-4: oklch(0.7 0.18 350);
+  --chart-5: oklch(0.6 0.05 95);
+  --sidebar: oklch(0.18 0.005 95);
+  --sidebar-foreground: oklch(0.96 0.004 95);
+  --sidebar-primary: oklch(0.7 0.15 162);
+  --sidebar-primary-foreground: oklch(0.18 0.03 162);
+  --sidebar-accent: oklch(0.3 0.04 162);
+  --sidebar-accent-foreground: oklch(0.85 0.08 162);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.7 0.15 162);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Custom scrollbar — subtle, theme-aware */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--muted);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+    background-clip: content-box;
+    border: 2px solid transparent;
+  }
+  /* Selection color */
+  ::selection {
+    background: oklch(0.52 0.13 162 / 0.25);
+  }
+  .dark ::selection {
+    background: oklch(0.7 0.15 162 / 0.35);
+  }
+  /* Tap highlight transparent for app-like feel */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Utility: thin inner ring used on focus cards */
+@layer utilities {
+  .ring-focus {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  /* Safe area helpers for mobile (PWA) */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
+  }
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+}
+
+/* Subtle fade-in for page sections */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Stagger helper — apply to children of a list for a cascade effect.
+   Usage: parent gets .stagger-list, children get inline style animationDelay. */
+@keyframes stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.stagger-item {
+  animation: stagger-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Celebration pop — used when a goal is completed */
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-pop-in {
+  animation: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Soft pulse for the "now" indicator on the weekly timeline */
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.animate-soft-pulse {
+  animation: soft-pulse 2s ease-in-out infinite;
+}
+
+/* Card hover lift — subtle, no gradient */
+.card-lift {
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s ease;
+}
+.card-lift:hover {
+  transform: translateY(-1px);
+}
+
+/* Focus ring — visible only on keyboard focus, not mouse click */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Sonner toast refinements */
+[data-sonner-toast] {
+  border-radius: var(--radius-lg) !important;
+  font-size: 0.8125rem !important;
+}
+
+/* Better placeholder contrast */
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+
+/* Range input (progress slider) styling — theme-aware thumb */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--muted);
+}
+input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--muted);
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  margin-top: -5px;
+  border-radius: 9999px;
+  background: var(--primary);
+  border: 2px solid var(--background);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.2);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+input[type='range']::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 9999px;
+  background: var(--primary);
+  border: 2px solid var(--background);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.2);
+  cursor: pointer;
+}
+
+/* Reduced motion respect */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Confetti burst — used when a task is marked complete */
+@keyframes confetti-burst {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--confetti-x), var(--confetti-y))
+      rotate(var(--confetti-rotate)) scale(0.4);
+  }
+}
+.animate-confetti-burst {
+  animation: confetti-burst 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

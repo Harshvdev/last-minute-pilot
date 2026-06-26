@@ -1,0 +1,225 @@
+// Last Minute Pilot — Production Prisma schema (PostgreSQL / Supabase)
+// Spec: §4 Data Model — https://upload/last-minute-pilot-architecture-c.md
+//
+// This schema targets PostgreSQL (Supabase). For local development without a
+// Postgres instance, see prisma/schema.dev.prisma (SQLite) and the
+// DEPLOYMENT.md "Local development" section.
+//
+// Multi-user: every Goal belongs to a User (NextAuth). All other tables trace
+// back to the user through goal_id. Enable Row-Level Security in Supabase to
+// enforce user-scoped access at the database level (see DEPLOYMENT.md §6).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Supabase connection pooling (pgbouncer) uses port 6543. Direct connections
+  // use 5432. Set DIRECT_URL for migrations if you use the pooler for the app.
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// User — mirrors the NextAuth user. We store a local copy so foreign keys +
+// joins work without an extra round-trip to Supabase Auth on every query.
+// The canonical source of truth is auth.users in Supabase; this table is a
+// denormalized cache created by the NextAuth `signIn` event callback.
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+
+  // OAuth account linkage (NextAuth Account model)
+  accounts Account[]
+  sessions Session[]
+
+  // Google Calendar OAuth tokens (encrypted at rest in production)
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleTokenExpiresAt DateTime?
+
+  // Push notification subscriptions
+  pushSubscriptions PushSubscription[]
+
+  // Owned goals
+  goals Goal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Core domain models
+// ---------------------------------------------------------------------------
+
+model Goal {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  goalType    String    @default("one_time") // one_time | habit
+  deadline    DateTime? // null for habits
+  status      String    @default("active") // active | completed | abandoned
+  rawInput    String?   // original user description, kept for AI context
+  category    String?   // work | study | personal | health | project | other
+  priority    Int       @default(0) // higher = more important; manual sorting
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  availability    Availability[]
+  tasks           Task[]
+  riskAssessments RiskAssessment[]
+  notes           Note[]
+
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  goalId    String
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([goalId])
+}
+
+model Availability {
+  id           String   @id @default(cuid())
+  goalId       String
+  goal         Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  dayOfWeek    Int?     // 0-6 (Sun-Sat), null if one-off
+  startTime    DateTime? // native Postgres time stored as today's date + time
+  endTime      DateTime?
+  specificDate DateTime? // used instead of dayOfWeek for one-off slots (date only)
+  createdAt    DateTime @default(now())
+
+  @@index([goalId])
+}
+
+model Task {
+  id               String   @id @default(cuid())
+  goalId           String
+  goal             Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  title            String
+  description      String?
+  estimatedMinutes Int      @default(30)
+  priorityScore    Float    @default(0) // computed, not LLM-guessed
+  dependsOnId      String?  // self-relation via taskId
+  status           String   @default("pending") // pending | in_progress | done | skipped
+  orderIndex       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  scheduleBlocks ScheduleBlock[]
+  progressLogs   ProgressLog[]
+
+  @@index([goalId])
+  @@index([dependsOnId])
+}
+
+model ScheduleBlock {
+  id             String   @id @default(cuid())
+  taskId         String
+  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  startAt        DateTime
+  endAt          DateTime
+  status         String   @default("planned") // planned | active | completed | missed
+  googleEventId  String?  // set when pushed to Google Calendar (for update/delete)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([taskId])
+  @@index([startAt])
+  @@index([googleEventId])
+}
+
+model ProgressLog {
+  id              String   @id @default(cuid())
+  taskId          String
+  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  loggedAt        DateTime @default(now())
+  percentComplete Int      @default(0)
+  note            String?
+
+  @@index([taskId])
+  @@index([loggedAt])
+}
+
+model RiskAssessment {
+  id              String   @id @default(cuid())
+  goalId          String
+  goal            Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  assessedAt      DateTime @default(now())
+  riskLevel       String   // low | medium | high | critical
+  reason          String?
+  suggestedAction String?
+  remainingWork   Int      @default(0) // minutes
+  remainingTime   Int      @default(0) // minutes
+
+  @@index([goalId])
+  @@index([assessedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Push notifications (Web Push API + VAPID)
+// ---------------------------------------------------------------------------
+
+model PushSubscription {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint     String   @unique // browser push service endpoint
+  p256dh       String   // public key
+  auth         String   // auth secret
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
