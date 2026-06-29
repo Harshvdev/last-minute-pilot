@@ -23,12 +23,19 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // In production, check for a valid JWT session.
-  const token = await getToken({ req });
-  if (!token) {
-    const signInUrl = new URL('/auth/signin', req.url);
-    signInUrl.searchParams.set('callbackUrl', pathname);
-    return NextResponse.redirect(signInUrl);
+  // In production, check for a valid JWT session or a valid CRON secret header.
+  const authHeader = req.headers.get('authorization');
+  const isCronRequest =
+    process.env.CRON_SECRET &&
+    authHeader === `Bearer ${process.env.CRON_SECRET}`;
+
+  if (!isCronRequest) {
+    const token = await getToken({ req });
+    if (!token) {
+      const signInUrl = new URL('/auth/signin', req.url);
+      signInUrl.searchParams.set('callbackUrl', pathname);
+      return NextResponse.redirect(signInUrl);
+    }
   }
 
   return NextResponse.next();
