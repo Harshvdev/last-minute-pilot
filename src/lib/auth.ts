@@ -54,6 +54,9 @@ if (hasGoogleCreds()) {
           prompt: 'consent',
         },
       },
+      httpOptions: {
+        timeout: 10000,
+      },
     })
   );
 }
@@ -64,6 +67,9 @@ if (hasGitHubCreds()) {
       clientId: process.env.GITHUB_CLIENT_ID!,
       clientSecret: process.env.GITHUB_CLIENT_SECRET!,
       allowDangerousEmailAccountLinking: true,
+      httpOptions: {
+        timeout: 10000,
+      },
     })
   );
 }

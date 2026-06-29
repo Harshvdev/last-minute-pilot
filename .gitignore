@@ -67,6 +67,7 @@ boot-timeline.log
 # local
 /graphify-out
 DEPLOYMENT.md
+.understand-anything
 
 # SQLite local databases
 *.db
