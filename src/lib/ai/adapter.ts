@@ -434,11 +434,12 @@ const providers: AIProvider[] = [
   new StubProvider(),
 ];
 
-async function generateJSONWithFallback(
+async function generateJSONWithFallback<T>(
   systemPrompt: string,
   userPrompt: string,
-  schemaConfig: SchemaConfig
-): Promise<string> {
+  schemaConfig: SchemaConfig,
+  validator: (raw: string) => T
+): Promise<T> {
   let lastError: Error | null = null;
   for (const provider of providers) {
     try {
@@ -446,12 +447,14 @@ async function generateJSONWithFallback(
       // always works).
       if (provider.name === 'Gemini' && !process.env.GEMINI_API_KEY) continue;
       if (provider.name === 'Groq' && !process.env.GROQ_API_KEY) continue;
-      return await provider.generateJSON(systemPrompt, userPrompt, schemaConfig);
+      
+      const raw = await provider.generateJSON(systemPrompt, userPrompt, schemaConfig);
+      return validator(raw); // Validate inside the loop to trigger fallback if validation fails
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       // Log the failure but don't throw — try the next provider.
       console.warn(
-        `[AI] ${provider.name} failed: ${lastError.message}. Falling back...`
+        `[AI] ${provider.name} failed or validation failed: ${lastError.message}. Falling back...`
       );
     }
   }
@@ -519,12 +522,18 @@ export async function breakdownGoal(input: {
 
   const user = userParts.filter(Boolean).join('\n');
 
-  const raw = await generateJSONWithFallback(system, user, {
-    name: 'GoalAIResult',
-    jsonSchema: goalAIResultJsonSchema,
-  });
-  const parsed = parseJsonSafe(raw);
-  const validated = AIResultSchema.parse(parsed);
+  const validated = await generateJSONWithFallback(
+    system,
+    user,
+    {
+      name: 'GoalAIResult',
+      jsonSchema: goalAIResultJsonSchema,
+    },
+    (raw) => {
+      const parsed = parseJsonSafe(raw);
+      return AIResultSchema.parse(parsed);
+    }
+  );
 
   const result: GoalAIResult = {
     confidence: validated.confidence,
@@ -589,12 +598,19 @@ export async function explainRisk(input: {
     `Tasks: ${input.completedTasks}/${input.totalTasks} done`,
   ].join('\n');
 
-  const raw = await generateJSONWithFallback(system, user, {
-    name: 'RiskExplanation',
-    jsonSchema: riskExplanationJsonSchema,
-  });
-  const parsed = parseJsonSafe(raw);
-  const validated = RiskExplanationSchema.parse(parsed);
+  const validated = await generateJSONWithFallback(
+    system,
+    user,
+    {
+      name: 'RiskExplanation',
+      jsonSchema: riskExplanationJsonSchema,
+    },
+    (raw) => {
+      const parsed = parseJsonSafe(raw);
+      return RiskExplanationSchema.parse(parsed);
+    }
+  );
+
   return {
     headline: validated.headline,
     body: validated.body,
