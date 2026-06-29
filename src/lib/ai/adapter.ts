@@ -26,7 +26,7 @@ import type {
 const TaskDraftSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional().nullable(),
-  estimatedMinutes: z.number().int().min(5).max(480), // Max 8 hours (aligned with prompt & schema)
+  estimatedMinutes: z.number().int().min(5).max(120), // Max 2 hours to lower activation energy
   dependsOn: z.number().int().min(0).optional().nullable(),
 });
 
@@ -38,7 +38,7 @@ const ClarificationQuestionSchema = z.object({
 
 const AIResultSchema = z.object({
   confidence: z.enum(['high', 'low']),
-  question: ClarificationQuestionSchema.optional().nullable(),
+  questions: z.array(ClarificationQuestionSchema).max(3).optional().nullable(),
   tasks: z.array(TaskDraftSchema).optional().nullable(),
   assumptions: z.array(z.string()).optional().nullable(),
   rationale: z.string().max(2000).optional().nullable(),
@@ -62,30 +62,33 @@ const goalAIResultJsonSchema = {
       enum: ['high', 'low'],
       description: 'Confidence in creating a precise, realistic plan. Set to "high" if you can plan, or "low" if you need clarification.',
     },
-    question: {
+    questions: {
       anyOf: [
         {
-          type: 'object',
-          properties: {
-            id: { type: 'string', description: 'Unique camelCase/snake_case identifier for the question' },
-            text: { type: 'string', description: 'The question text to ask the user' },
-            options: {
-              anyOf: [
-                {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: 'List of multiple choice options',
-                },
-                { type: 'null' }
-              ],
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'Unique camelCase/snake_case identifier for the question' },
+              text: { type: 'string', description: 'The question text to ask the user' },
+              options: {
+                anyOf: [
+                  {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'List of multiple choice options',
+                  },
+                  { type: 'null' }
+                ],
+              },
             },
+            required: ['id', 'text', 'options'],
+            additionalProperties: false,
           },
-          required: ['id', 'text', 'options'],
-          additionalProperties: false,
         },
         { type: 'null' }
       ],
-      description: 'Exactly one clarifying question if confidence is "low". Otherwise null.',
+      description: 'Up to 3 clarifying questions if confidence is "low". Otherwise null.',
     },
     tasks: {
       anyOf: [
@@ -102,7 +105,7 @@ const goalAIResultJsonSchema = {
                 ],
                 description: 'Optional task description (max 1000 chars)',
               },
-              estimatedMinutes: { type: 'integer', description: 'Estimated minutes to complete (5 to 480)' },
+              estimatedMinutes: { type: 'integer', description: 'Estimated minutes to complete (5 to 120)' },
               dependsOn: {
                 anyOf: [
                   { type: 'integer' },
@@ -137,7 +140,7 @@ const goalAIResultJsonSchema = {
       description: 'Brief rationale for the plan or the clarifying question.',
     },
   },
-  required: ['confidence', 'question', 'tasks', 'assumptions', 'rationale'],
+  required: ['confidence', 'questions', 'tasks', 'assumptions', 'rationale'],
   additionalProperties: false,
 };
 
@@ -322,11 +325,13 @@ class StubProvider implements AIProvider {
       if (isIndianRights && !hasAnswers && !isForced) {
         return JSON.stringify({
           confidence: 'low',
-          question: {
-            id: 'assignment_type',
-            text: 'Is this a school assignment, college assignment, or professional report?',
-            options: ['School assignment', 'College assignment', 'Professional report']
-          },
+          questions: [
+            {
+              id: 'assignment_type',
+              text: 'Is this a school assignment, college assignment, or professional report?',
+              options: ['School assignment', 'College assignment', 'Professional report']
+            }
+          ],
           tasks: null,
           assumptions: null,
           rationale: 'Need to clarify assignment type.'
@@ -485,13 +490,13 @@ export async function breakdownGoal(input: {
     'Respond with VALID JSON ONLY — no markdown, no preamble, no comments.',
     'Rules:',
     '1. First, analyze the user\'s input. Extract what you can (e.g. deliverable, length, topic).',
-    '2. If you have enough information to create a precise, realistic, non-padded plan, return confidence "high", question null, and the "tasks" array (1 to 12 tasks total).',
-    '3. If the input is ambiguous or lacks critical context (e.g., expected depth, format, or level of detail) causing your confidence to be low for an accurate plan, return confidence "low" and exactly ONE clarifying question (with a short camel_case/snake_case id, clear text, and optional choice options), tasks null, assumptions null.',
-    '4. Do NOT always ask follow-up questions. Extract what you can first. Only ask a question if you cannot plan realistically without it.',
+    '2. If you have enough information to create a precise, realistic, non-padded plan, return confidence "high", questions null, and the "tasks" array (1 to 12 tasks total).',
+    '3. If the input is ambiguous or lacks critical context (e.g., expected depth, format, or level of detail) causing your confidence to be low for an accurate plan, return confidence "low" and an array of up to 3 clarifying questions (each with a short camel_case/snake_case id, clear text, and optional choice options) all at once, tasks null, assumptions null.',
+    '4. Do NOT always ask follow-up questions. Extract what you can first. Only ask questions if you cannot plan realistically without them.',
     '5. If the user has already answered/skipped clarifying questions (provided in the user prompt), integrate those answers. Your confidence should be "high" unless you truly need one more critical clarification (subject to the backend hard safety limit). Do not re-ask questions that have already been answered or skipped.',
-    '6. If you are instructed to force a final plan (Force final plan: true), you MUST return confidence "high", question null, and the "tasks" array.',
+    '6. If you are instructed to force a final plan (Force final plan: true), you MUST return confidence "high", questions null, and the "tasks" array.',
     '7. For simple chores (e.g., watering plants, taking out trash), use 1 to 3 tasks and always output high confidence immediately. Do not ask questions for simple tasks.',
-    '8. Task rules: each title starts with a verb (max 80 chars), estimatedMinutes is between 5 and 480 (8 hours), dependsOn is a 0-based index of a prerequisite task in the same array, and order them in sensible execution sequence.',
+    '8. Task rules: each title starts with a verb (max 80 chars), estimatedMinutes is between 5 and 120 (2 hours). If a logical task requires more than 2 hours, you MUST break it down into smaller sequential sub-tasks (e.g. Phase 1, Phase 2) and link them using the dependsOn property (0-based index of prerequisite in the same array).',
     '9. Be extremely realistic about effort. Do not pad or inflate durations. The total time for all tasks combined should match how long a normal person takes to complete the goal.',
     '10. If confidence is high, also return a list of "assumptions" you made about the goal (e.g., target depth, format) that were not explicitly stated, so the user can verify them.',
   ].join('\n');
@@ -537,12 +542,12 @@ export async function breakdownGoal(input: {
 
   const result: GoalAIResult = {
     confidence: validated.confidence,
-    question: validated.question
-      ? {
-          id: validated.question.id,
-          text: validated.question.text,
-          options: validated.question.options ?? null,
-        }
+    questions: validated.questions
+      ? validated.questions.map((q) => ({
+          id: q.id,
+          text: q.text,
+          options: q.options ?? null,
+        }))
       : null,
     tasks: validated.tasks
       ? validated.tasks.map((t) => ({

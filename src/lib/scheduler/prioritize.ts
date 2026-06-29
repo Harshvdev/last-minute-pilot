@@ -50,12 +50,16 @@ export function scoreTask(input: ScoreInput): number {
 
   const urgency = URGENCY_WEIGHT * urgencyFactor;
   const impact = IMPACT_WEIGHT * dependentsCount;
-  const effort = EFFORT_WEIGHT * task.estimatedMinutes;
+  
+  // Fix: Turn the effort penalty into an asset if other tasks are waiting on it
+  const effortFactor = task.estimatedMinutes * EFFORT_WEIGHT;
+  const effortScore = dependentsCount > 0 ? + (effortFactor * 1.5) : - effortFactor;
+
   // Blocked tasks (have an unmet dependency) get deprioritized slightly so the
   // scheduler tries the prerequisite first.
   const blockedPenalty = task.dependsOnId ? 5 : 0;
 
-  return urgency + impact - effort - blockedPenalty;
+  return urgency + impact + effortScore - blockedPenalty;
 }
 
 /**

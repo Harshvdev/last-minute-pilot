@@ -165,7 +165,8 @@ export default function GoalDetailPage() {
 
   // AI Planning Assistant States
   const [showPlanningAssistant, setShowPlanningAssistant] = React.useState(false);
-  const [currentQuestion, setCurrentQuestion] = React.useState<{ id: string; text: string; options?: string[] | null } | null>(null);
+  const [currentQuestions, setCurrentQuestions] = React.useState<{ id: string; text: string; options?: string[] | null }[] | null>(null);
+  const [formAnswers, setFormAnswers] = React.useState<Record<string, string>>({});
   const [answers, setAnswers] = React.useState<{ questionId: string; answer?: string | null; skipped?: boolean }[]>([]);
 
   const { data, isLoading, refetch, isFetching } = useQuery<{ goal: GoalDetail }>({
@@ -185,7 +186,7 @@ export default function GoalDetailPage() {
     mutationFn: (params: BreakdownMutationParams = {}) =>
       api<{
         status: 'need_clarification' | 'completed';
-        question?: { id: string; text: string; options?: string[] | null } | null;
+        questions?: { id: string; text: string; options?: string[] | null }[] | null;
         tasks?: unknown[];
         assumptions?: string[] | null;
         rationale?: string | null;
@@ -197,10 +198,15 @@ export default function GoalDetailPage() {
         }),
       }),
     onSuccess: (res) => {
-      if (res.status === 'need_clarification' && res.question) {
-        setCurrentQuestion(res.question);
+      if (res.status === 'need_clarification' && res.questions && res.questions.length > 0) {
+        setCurrentQuestions(res.questions);
+        const initialAnswers: Record<string, string> = {};
+        res.questions.forEach((q) => {
+          initialAnswers[q.id] = '';
+        });
+        setFormAnswers(initialAnswers);
       } else {
-        setCurrentQuestion(null);
+        setCurrentQuestions(null);
         setShowPlanningAssistant(false);
         toast.success(
           `AI drafted ${res.tasks?.length ?? 0} task${res.tasks?.length === 1 ? '' : 's'}.`
@@ -210,7 +216,7 @@ export default function GoalDetailPage() {
       }
     },
     onError: (e: Error) => {
-      setCurrentQuestion(null);
+      setCurrentQuestions(null);
       setShowPlanningAssistant(false);
       toast.error(`Breakdown failed: ${e.message}`);
     },
@@ -218,7 +224,8 @@ export default function GoalDetailPage() {
 
   const startPlanningAssistant = () => {
     setAnswers([]);
-    setCurrentQuestion(null);
+    setCurrentQuestions(null);
+    setFormAnswers({});
     setShowPlanningAssistant(true);
     breakdownMutation.mutate({ answers: [] });
   };
@@ -717,90 +724,77 @@ export default function GoalDetailPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4 space-y-4">
-            {breakdownMutation.isPending && !currentQuestion ? (
+          <div className="py-4 space-y-4 max-h-[50vh] overflow-y-auto pr-1">
+            {breakdownMutation.isPending && !currentQuestions ? (
               <div className="flex flex-col items-center justify-center py-8 space-y-3">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 <p className="text-sm font-medium text-muted-foreground">AI is analyzing goal details...</p>
               </div>
-            ) : currentQuestion ? (
-              <div className="space-y-4">
-                {/* Question Display */}
-                <div className="space-y-2">
+            ) : currentQuestions ? (
+              <div className="space-y-6">
+                <div className="space-y-1">
                   <span className="text-[0.625rem] font-semibold uppercase tracking-wider text-primary">
-                    Clarification Turn {answers.length + 1} of 3
+                    Tailor Your Plan
                   </span>
-                  <p className="text-sm font-medium leading-relaxed text-foreground">
-                    {currentQuestion.text}
+                  <p className="text-xs text-muted-foreground">
+                    Please provide a few more details to help the AI construct the perfect task breakdown for you.
                   </p>
                 </div>
 
-                {/* Option Pills */}
-                {currentQuestion.options && currentQuestion.options.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {currentQuestion.options.map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => {
-                          const newAnswers = [...answers, { questionId: currentQuestion.id, answer: opt }];
-                          setAnswers(newAnswers);
-                          setCurrentQuestion(null);
-                          breakdownMutation.mutate({ answers: newAnswers });
-                        }}
-                        disabled={breakdownMutation.isPending}
-                        className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-50"
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="space-y-6 divide-y divide-border/50">
+                  {currentQuestions.map((q, qIdx) => (
+                    <div key={q.id} className={qIdx > 0 ? "pt-4 space-y-3" : "space-y-3"}>
+                      <Label className="text-sm font-medium leading-relaxed text-foreground">
+                        {q.text}
+                      </Label>
 
-                {/* Custom Text input */}
-                <div className="space-y-1.5 pt-2">
-                  <Label htmlFor="customAnswer" className="text-xs font-medium text-muted-foreground">
-                    Or type your own details:
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="customAnswer"
-                      placeholder="Type details here..."
-                      disabled={breakdownMutation.isPending}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const val = e.currentTarget.value.trim();
-                          if (val) {
-                            const newAnswers = [...answers, { questionId: currentQuestion.id, answer: val }];
-                            setAnswers(newAnswers);
-                            setCurrentQuestion(null);
-                            breakdownMutation.mutate({ answers: newAnswers });
-                          }
-                        }
-                      }}
-                      className="text-xs h-9"
-                    />
-                    <Button
-                      size="sm"
-                      disabled={breakdownMutation.isPending}
-                      onClick={() => {
-                        const inputEl = document.getElementById('customAnswer') as HTMLInputElement;
-                        const val = inputEl?.value.trim();
-                        if (val) {
-                          const newAnswers = [...answers, { questionId: currentQuestion.id, answer: val }];
-                          setAnswers(newAnswers);
-                          setCurrentQuestion(null);
-                          breakdownMutation.mutate({ answers: newAnswers });
-                        }
-                      }}
-                    >
-                      {breakdownMutation.isPending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        'Submit'
+                      {/* Option Pills */}
+                      {q.options && q.options.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {q.options.map((opt) => {
+                            const isSelected = formAnswers[q.id] === opt;
+                            return (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => {
+                                  setFormAnswers((prev) => ({
+                                    ...prev,
+                                    [q.id]: opt,
+                                  }));
+                                }}
+                                disabled={breakdownMutation.isPending}
+                                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                                  isSelected
+                                    ? 'border-primary bg-primary/10 text-primary'
+                                    : 'border-border bg-card text-foreground hover:border-primary hover:bg-primary/5'
+                                }`}
+                              >
+                                {opt}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
-                    </Button>
-                  </div>
+
+                      {/* Custom Text input */}
+                      <div className="space-y-1">
+                        <Input
+                          placeholder="Or type custom details..."
+                          value={formAnswers[q.id] || ''}
+                          disabled={breakdownMutation.isPending}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setFormAnswers((prev) => ({
+                              ...prev,
+                              [q.id]: val,
+                            }));
+                          }}
+                          className="text-xs h-9"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -812,35 +806,51 @@ export default function GoalDetailPage() {
           </div>
 
           <DialogFooter className="flex flex-row items-center justify-between border-t border-border/40 pt-4 mt-2">
-            {currentQuestion ? (
+            {currentQuestions ? (
               <>
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={breakdownMutation.isPending}
                   onClick={() => {
-                    const newAnswers = [...answers, { questionId: currentQuestion.id, skipped: true }];
+                    const newAnswers = currentQuestions.map((q) => ({
+                      questionId: q.id,
+                      skipped: true,
+                    }));
                     setAnswers(newAnswers);
-                    setCurrentQuestion(null);
+                    setCurrentQuestions(null);
                     breakdownMutation.mutate({ answers: newAnswers });
                   }}
                   className="text-xs text-muted-foreground hover:text-foreground"
                 >
-                  Skip question
+                  Skip all questions
                 </Button>
 
                 <Button
-                  variant="outline"
                   size="sm"
                   disabled={breakdownMutation.isPending}
                   onClick={() => {
-                    setCurrentQuestion(null);
-                    breakdownMutation.mutate({ answers, force: true });
+                    const newAnswers = currentQuestions.map((q) => {
+                      const ans = formAnswers[q.id]?.trim();
+                      if (ans) {
+                        return { questionId: q.id, answer: ans };
+                      }
+                      return { questionId: q.id, skipped: true };
+                    });
+                    setAnswers(newAnswers);
+                    setCurrentQuestions(null);
+                    breakdownMutation.mutate({ answers: newAnswers });
                   }}
-                  className="text-xs border-dashed gap-1"
+                  className="text-xs gap-1"
                 >
-                  <Sparkles className="h-3 w-3 text-primary" />
-                  Skip all & plan
+                  {breakdownMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Sparkles className="h-3 w-3" />
+                      Generate Plan
+                    </>
+                  )}
                 </Button>
               </>
             ) : (

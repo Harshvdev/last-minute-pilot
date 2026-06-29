@@ -110,7 +110,7 @@ export interface GoalClarificationResponse {
 
 export interface GoalAIResult {
   confidence: 'high' | 'low';
-  question?: GoalClarificationQuestion | null;
+  questions?: GoalClarificationQuestion[] | null;
   tasks?: TaskDraft[] | null;
   assumptions?: string[] | null;
   rationale?: string | null;

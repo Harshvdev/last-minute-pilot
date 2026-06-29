@@ -66,54 +66,136 @@ export async function POST(req: NextRequest, { params }: Params) {
     );
   }
 
-  if (aiResult.confidence === 'low' && aiResult.question) {
+  if (aiResult.confidence === 'low' && aiResult.questions && aiResult.questions.length > 0) {
     return NextResponse.json({
       status: 'need_clarification',
-      question: aiResult.question,
+      questions: aiResult.questions,
     });
   }
 
   const tasksDraft = aiResult.tasks || [];
   const assumptions = aiResult.assumptions || [];
 
-  // Delete existing pending tasks (keep done/in_progress to preserve progress)
-  await db.task.deleteMany({
-    where: { goalId: id, status: 'pending' },
+  // 1. Fetch all existing tasks for this goal
+  const existingTasks = await db.task.findMany({
+    where: { goalId: id },
+    orderBy: { orderIndex: 'asc' },
   });
 
-  // Count existing tasks for orderIndex base
-  const existing = await db.task.count({ where: { goalId: id } });
+  // Split into pending (which we can reconcile) and non-pending (active/done/skipped, which we MUST preserve)
+  const existingPending = existingTasks.filter((t) => t.status === 'pending');
+  const existingNonPending = existingTasks.filter((t) => t.status !== 'pending');
 
-  const now = new Date();
-  const created = await db.$transaction(
-    tasksDraft.map((d, idx) =>
-      db.task.create({
-        data: {
-          goalId: id,
-          title: d.title,
-          description: d.description ?? null,
-          estimatedMinutes: d.estimatedMinutes,
-          orderIndex: existing + idx,
-        },
-      })
-    )
-  );
+  // Helper for word-based Jaccard similarity
+  function getSimilarity(s1: string, s2: string): number {
+    const w1 = new Set(s1.toLowerCase().split(/\s+/).filter(Boolean));
+    const w2 = new Set(s2.toLowerCase().split(/\s+/).filter(Boolean));
+    if (w1.size === 0 && w2.size === 0) return 1;
+    const intersection = new Set([...w1].filter((x) => w2.has(x)));
+    const union = new Set([...w1, ...w2]);
+    return union.size === 0 ? 0 : intersection.size / union.size;
+  }
 
-  // Resolve dependsOn indices to real task IDs
+  // 2. Perform delta matching
+  const matchedExistingIds = new Set<string>();
+  const finalTasks: any[] = [];
+
   for (let i = 0; i < tasksDraft.length; i++) {
-    const d = tasksDraft[i];
-    if (typeof d.dependsOn === 'number' && created[d.dependsOn]) {
-      await db.task.update({
-        where: { id: created[i].id },
-        data: { dependsOnId: created[d.dependsOn].id },
+    const draft = tasksDraft[i];
+    let bestMatch: typeof existingPending[0] | null = null;
+    let bestScore = 0;
+
+    // First pass: Semantic similarity
+    for (const ext of existingPending) {
+      if (matchedExistingIds.has(ext.id)) continue;
+      const score = getSimilarity(draft.title, ext.title);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = ext;
+      }
+    }
+
+    // If similarity is decent (>= 0.35), match it
+    if (bestMatch && bestScore >= 0.35) {
+      matchedExistingIds.add(bestMatch.id);
+      const updated = await db.task.update({
+        where: { id: bestMatch.id },
+        data: {
+          title: draft.title,
+          description: draft.description ?? null,
+          estimatedMinutes: draft.estimatedMinutes,
+        },
       });
-      created[i].dependsOnId = created[d.dependsOn].id;
+      finalTasks.push(updated);
+    } else {
+      // Fallback: Match by positional index in the remaining unmatched pending tasks
+      const positionMatch = existingPending.find((ext) => !matchedExistingIds.has(ext.id));
+      if (positionMatch) {
+        matchedExistingIds.add(positionMatch.id);
+        const updated = await db.task.update({
+          where: { id: positionMatch.id },
+          data: {
+            title: draft.title,
+            description: draft.description ?? null,
+            estimatedMinutes: draft.estimatedMinutes,
+          },
+        });
+        finalTasks.push(updated);
+      } else {
+        // No match found — create a new task
+        const createdNew = await db.task.create({
+          data: {
+            goalId: id,
+            title: draft.title,
+            description: draft.description ?? null,
+            estimatedMinutes: draft.estimatedMinutes,
+            orderIndex: existingTasks.length + i,
+          },
+        });
+        finalTasks.push(createdNew);
+      }
     }
   }
 
-  // Compute deterministic priority scores and persist them.
+  // 3. Delete any remaining unmatched pending tasks
+  const unmatchedPending = existingPending.filter((ext) => !matchedExistingIds.has(ext.id));
+  if (unmatchedPending.length > 0) {
+    await db.task.deleteMany({
+      where: {
+        id: { in: unmatchedPending.map((t) => t.id) },
+      },
+    });
+  }
+
+  // 4. Resolve dependsOn indices to real task IDs
+  for (let i = 0; i < tasksDraft.length; i++) {
+    const d = tasksDraft[i];
+    const currentTask = finalTasks[i];
+    if (typeof d.dependsOn === 'number' && finalTasks[d.dependsOn]) {
+      const depTask = finalTasks[d.dependsOn];
+      await db.task.update({
+        where: { id: currentTask.id },
+        data: { dependsOnId: depTask.id },
+      });
+      currentTask.dependsOnId = depTask.id;
+    } else {
+      await db.task.update({
+        where: { id: currentTask.id },
+        data: { dependsOnId: null },
+      });
+      currentTask.dependsOnId = null;
+    }
+  }
+
+  // Combine non-pending tasks and final reconciled tasks to re-prioritize
+  const allCurrentTasks = [
+    ...existingNonPending,
+    ...finalTasks,
+  ];
+
+  const now = new Date();
   const ranked = prioritize(
-    created.map((t) => ({
+    allCurrentTasks.map((t) => ({
       id: t.id,
       goalId: t.goalId,
       title: t.title,
@@ -144,7 +226,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   return NextResponse.json({
     status: 'completed',
-    tasks: created,
+    tasks: finalTasks,
     assumptions,
     rationale: aiResult.rationale ?? null,
   });
