@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { assessRisk } from '@/lib/risk/assess';
 import { explainRisk } from '@/lib/ai/adapter';
-import { requireUser } from '@/lib/auth/session';
+import { requireUser, getUserTimezone } from '@/lib/auth/session';
 import type { TaskRow, TaskStatus } from '@/lib/types';
 
 type Params = { params: Promise<{ id: string }> };
@@ -16,6 +16,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const userIdOrResponse = await requireUser();
   if (userIdOrResponse instanceof NextResponse) return userIdOrResponse;
   const userId = userIdOrResponse;
+
+  const timezone = await getUserTimezone(userId);
 
   const { id } = await params;
   const goal = await db.goal.findFirst({
@@ -55,6 +57,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       specificDate: a.specificDate?.toISOString() ?? null,
     })),
     deadline: goal.deadline,
+    timezone,
   });
 
   let headline = assessment.reason;

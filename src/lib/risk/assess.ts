@@ -22,6 +22,7 @@ export interface AssessInput {
   availability: AvailabilityRow[];
   deadline: Date | null;
   now?: Date;
+  timezone?: string;
 }
 
 export interface Assessment {
@@ -49,7 +50,7 @@ export function assessRisk(input: AssessInput): Assessment {
   let remainingTime: number;
   if (input.deadline) {
     const end = input.deadline > now ? input.deadline : now;
-    const windows = expandAvailability(input.availability, now, end);
+    const windows = expandAvailability(input.availability, now, end, input.timezone);
     remainingTime = windows.reduce(
       (sum, w) => sum + (w.end.getTime() - w.start.getTime()) / 60000,
       0
@@ -58,7 +59,7 @@ export function assessRisk(input: AssessInput): Assessment {
     const horizon = new Date(
       now.getTime() + HORIZON_DAYS_NO_DEADLINE * 24 * 60 * 60 * 1000
     );
-    const windows = expandAvailability(input.availability, now, horizon);
+    const windows = expandAvailability(input.availability, now, horizon, input.timezone);
     remainingTime = windows.reduce(
       (sum, w) => sum + (w.end.getTime() - w.start.getTime()) / 60000,
       0

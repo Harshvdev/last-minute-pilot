@@ -19,6 +19,7 @@ export interface FitInput {
   // Busy slots from Google Calendar (or other external calendars).
   // The scheduler will not place blocks during these times.
   busySlots?: { start: Date; end: Date }[];
+  timezone?: string;
 }
 
 export interface ScheduledBlock {
@@ -38,13 +39,92 @@ const HORIZON_DAYS_NO_DEADLINE = 14;
 const SLOT_MINUTES = 15; // granularity
 
 /**
+ * Safe helper to get the timezone offset in milliseconds for a given date.
+ */
+function getTimezoneOffset(timezone: string, date: Date): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false,
+  });
+  
+  const parts = formatter.formatToParts(date);
+  const partMap = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  
+  const y = Number(partMap.year);
+  const m = Number(partMap.month);
+  const d = Number(partMap.day);
+  const h = Number(partMap.hour === '24' ? '0' : partMap.hour);
+  const min = Number(partMap.minute);
+  const s = Number(partMap.second);
+  
+  const localUtc = Date.UTC(y, m - 1, d, h, min, s);
+  return localUtc - date.getTime();
+}
+
+/**
+ * Safely converts a local date-time to a UTC Date in a specific timezone,
+ * accounting for DST transitions and non-existent/ambiguous local times.
+ */
+function localTimeToUTC(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timezone: string
+): Date {
+  const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  const offset = getTimezoneOffset(timezone, utcDate);
+  const candidate = new Date(utcDate.getTime() - offset);
+  const candidateOffset = getTimezoneOffset(timezone, candidate);
+  
+  if (offset !== candidateOffset) {
+    return new Date(utcDate.getTime() - candidateOffset);
+  }
+  return candidate;
+}
+
+/**
+ * Helper to get date parts of a UTC Date in a specific timezone.
+ */
+function getPartsInTimeZone(date: Date, timezone: string) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const partMap = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return {
+    year: Number(partMap.year),
+    month: Number(partMap.month),
+    day: Number(partMap.day),
+    hour: Number(partMap.hour === '24' ? '0' : partMap.hour),
+    minute: Number(partMap.minute),
+    second: Number(partMap.second),
+  };
+}
+
+/**
  * Expand the user's recurring + one-off availability rules into a list of
  * concrete [start, end) windows between `start` and `end`.
  */
 export function expandAvailability(
   availability: AvailabilityRow[],
   start: Date,
-  end: Date
+  end: Date,
+  timezone: string = 'UTC'
 ): { start: Date; end: Date }[] {
   if (start >= end) return [];
   const windows: { start: Date; end: Date }[] = [];
@@ -53,13 +133,27 @@ export function expandAvailability(
   const maxIterations = 365;
   let it = 0;
 
+  const startParts = getPartsInTimeZone(start, timezone);
+  const localCursor = new Date(Date.UTC(startParts.year, startParts.month - 1, startParts.day));
+  
+  const endParts = getPartsInTimeZone(end, timezone);
+  const localEnd = new Date(Date.UTC(endParts.year, endParts.month - 1, endParts.day + 1));
+
   for (const rule of availability) {
     if (rule.specificDate) {
       const date = new Date(rule.specificDate);
       if (isNaN(date.getTime())) continue;
       if (rule.startTime && rule.endTime) {
-        const s = combineDateTime(date, rule.startTime);
-        const e = combineDateTime(date, rule.endTime);
+        const y = date.getUTCFullYear();
+        const m = date.getUTCMonth() + 1;
+        const d = date.getUTCDate();
+        
+        const [sh, sm] = rule.startTime.split(':').map(Number);
+        const [eh, em] = rule.endTime.split(':').map(Number);
+        
+        const s = localTimeToUTC(y, m, d, sh ?? 0, sm ?? 0, timezone);
+        const e = localTimeToUTC(y, m, d, eh ?? 0, em ?? 0, timezone);
+        
         if (s < e && e > start && s < end) {
           windows.push({
             start: s < start ? start : s,
@@ -68,13 +162,21 @@ export function expandAvailability(
         }
       }
     } else if (rule.dayOfWeek != null && rule.startTime && rule.endTime) {
-      // Walk day by day from start (truncated to midnight) to end.
-      const cursor = new Date(start);
-      cursor.setHours(0, 0, 0, 0);
-      while (cursor < end && it++ < maxIterations) {
-        if (cursor.getDay() === rule.dayOfWeek) {
-          const s = combineDateTime(cursor, rule.startTime);
-          const e = combineDateTime(cursor, rule.endTime);
+      let cursor = new Date(localCursor);
+      it = 0;
+      while (cursor <= localEnd && it++ < maxIterations) {
+        const dayOfWeek = cursor.getUTCDay();
+        if (dayOfWeek === rule.dayOfWeek) {
+          const y = cursor.getUTCFullYear();
+          const m = cursor.getUTCMonth() + 1;
+          const d = cursor.getUTCDate();
+          
+          const [sh, sm] = rule.startTime.split(':').map(Number);
+          const [eh, em] = rule.endTime.split(':').map(Number);
+          
+          const s = localTimeToUTC(y, m, d, sh ?? 0, sm ?? 0, timezone);
+          const e = localTimeToUTC(y, m, d, eh ?? 0, em ?? 0, timezone);
+          
           if (s < e && e > start && s < end) {
             windows.push({
               start: s < start ? start : s,
@@ -82,7 +184,7 @@ export function expandAvailability(
             });
           }
         }
-        cursor.setDate(cursor.getDate() + 1);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
     }
   }
@@ -101,13 +203,6 @@ export function expandAvailability(
   return merged;
 }
 
-function combineDateTime(date: Date, hhmm: string): Date {
-  const [h, m] = hhmm.split(':').map(Number);
-  const d = new Date(date);
-  d.setHours(h ?? 0, m ?? 0, 0, 0);
-  return d;
-}
-
 /**
  * Fit prioritized tasks into the availability windows.
  * A task may be split across multiple windows if a single window is shorter
@@ -118,7 +213,7 @@ export function fitBlocks(input: FitInput): FitResult {
     ? input.deadline
     : new Date(input.start.getTime() + HORIZON_DAYS_NO_DEADLINE * 24 * 60 * 60 * 1000);
 
-  let windows = expandAvailability(input.availability, input.start, horizon);
+  let windows = expandAvailability(input.availability, input.start, horizon, input.timezone);
 
   // Subtract busy slots (from Google Calendar) from the availability windows.
   // This ensures we don't double-book the user's existing events.

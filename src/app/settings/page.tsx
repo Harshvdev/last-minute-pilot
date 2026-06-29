@@ -13,7 +13,11 @@ import {
   LayoutDashboard,
   CalendarRange,
   Check,
+  Globe,
+  RefreshCw,
 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api-client';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -48,9 +52,71 @@ import {
 import { useTheme } from 'next-themes';
 import { CATEGORIES, DAYS_OF_WEEK } from '@/lib/format';
 
+const COMMON_TIMEZONES = [
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Paris',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];
+
 export default function SettingsPage() {
   const prefs = usePreferences();
   const { setTheme } = useTheme();
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery<{ userTimezone?: string }>({
+    queryKey: ['stats'],
+    queryFn: () => api<{ userTimezone?: string }>('/api/stats'),
+    staleTime: Infinity,
+  });
+
+  const savedTimezone = data?.userTimezone || 'UTC';
+  const [selectedTimezone, setSelectedTimezone] = React.useState('UTC');
+
+  React.useEffect(() => {
+    if (savedTimezone) {
+      setSelectedTimezone(savedTimezone);
+    }
+  }, [savedTimezone]);
+
+  const deviceTimezone = React.useMemo(() => {
+    if (typeof window === 'undefined') return 'UTC';
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }, []);
+
+  const timezoneOptions = React.useMemo(() => {
+    const set = new Set([...COMMON_TIMEZONES, deviceTimezone]);
+    if (savedTimezone) {
+      set.add(savedTimezone);
+    }
+    return Array.from(set).sort();
+  }, [deviceTimezone, savedTimezone]);
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      await api('/api/settings/timezone', {
+        method: 'POST',
+        body: JSON.stringify({ timezone: selectedTimezone }),
+      });
+      await api('/api/schedule/replan', { method: 'POST' });
+    },
+    onSuccess: () => {
+      toast.success('Timezone updated and schedule replanned!');
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      qc.invalidateQueries({ queryKey: ['goals'] });
+      qc.invalidateQueries({ queryKey: ['goal'] });
+    },
+    onError: (err: Error) => {
+      toast.error(`Failed to update timezone: ${err.message}`);
+    },
+  });
 
   // Sync theme preference to next-themes
   React.useEffect(() => {
@@ -170,6 +236,55 @@ export default function SettingsPage() {
                 When you create a goal, the copilot drafts tasks automatically.
               </p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Timezone */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <Globe className="h-4 w-4 text-primary" />
+            Schedule Timezone
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-0">
+          <div className="space-y-2">
+            <Label htmlFor="timezone" className="text-sm font-medium">
+              Timezone
+            </Label>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Select
+                value={selectedTimezone}
+                onValueChange={setSelectedTimezone}
+                disabled={isLoading || updateMutation.isPending}
+              >
+                <SelectTrigger id="timezone" className="w-full sm:w-[300px]">
+                  <SelectValue placeholder="Select timezone" />
+                </SelectTrigger>
+                <SelectContent>
+                  {timezoneOptions.map((tz) => (
+                    <SelectItem key={tz} value={tz}>
+                      {tz}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={() => updateMutation.mutate()}
+                disabled={isLoading || updateMutation.isPending || selectedTimezone === savedTimezone}
+                className="gap-1.5 shrink-0"
+              >
+                {updateMutation.isPending && (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                )}
+                Save Timezone
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              All task scheduling, deadlines, and notifications are calculated based on this timezone. 
+              Updating your timezone will automatically trigger a schedule replan.
+            </p>
           </div>
         </CardContent>
       </Card>

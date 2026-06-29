@@ -35,6 +35,7 @@ import { ShortcutsHelp } from '@/components/shortcuts-help';
 import { NotificationsBell } from '@/components/notifications-bell';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
+import { TimezoneBanner } from '@/components/timezone-banner';
 
 type NavItem = {
   href: string;
@@ -327,6 +328,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <ThemeToggle />
             </div>
           </header>
+
+          <TimezoneBanner />
 
           <main className={cn(
             'flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 lg:pb-8',

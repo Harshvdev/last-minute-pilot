@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { prioritize } from '@/lib/scheduler/prioritize';
 import { fitBlocks } from '@/lib/scheduler/fit-blocks';
-import { requireUser } from '@/lib/auth/session';
+import { requireUser, getUserTimezone } from '@/lib/auth/session';
 import { fetchBusySlots, createCalendarEvent } from '@/lib/calendar/sync';
 import type { AvailabilityRow, TaskRow, TaskStatus } from '@/lib/types';
 
@@ -17,6 +17,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const userIdOrResponse = await requireUser();
   if (userIdOrResponse instanceof NextResponse) return userIdOrResponse;
   const userId = userIdOrResponse;
+
+  const timezone = await getUserTimezone(userId);
 
   const { id } = await params;
   const goal = await db.goal.findFirst({
@@ -69,6 +71,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
     start: now,
     deadline: goal.deadline,
     busySlots,
+    timezone,
   });
 
   // Wipe future planned blocks for this goal's tasks (keep past completed/missed).

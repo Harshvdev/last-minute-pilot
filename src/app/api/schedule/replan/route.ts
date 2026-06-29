@@ -4,7 +4,7 @@ import { prioritize } from '@/lib/scheduler/prioritize';
 import { fitBlocks } from '@/lib/scheduler/fit-blocks';
 import { assessRisk } from '@/lib/risk/assess';
 import { explainRisk } from '@/lib/ai/adapter';
-import { requireUser } from '@/lib/auth/session';
+import { requireUser, getUserTimezone } from '@/lib/auth/session';
 import { notifyRiskEscalation } from '@/lib/push/server';
 import type { AvailabilityRow, TaskRow, TaskStatus } from '@/lib/types';
 import type { RiskLevel } from '@/lib/types';
@@ -27,6 +27,8 @@ async function replanForUser(
   userId: string,
   now: Date = new Date()
 ): Promise<ReplanResult[]> {
+  const timezone = await getUserTimezone(userId);
+
   const goals = await db.goal.findMany({
     where: { userId, status: 'active' },
     include: {
@@ -67,6 +69,7 @@ async function replanForUser(
       availability,
       deadline: goal.deadline,
       now,
+      timezone,
     });
 
     // 2) Re-fit schedule blocks (only if work remains).
@@ -79,6 +82,7 @@ async function replanForUser(
         availability,
         start: now,
         deadline: goal.deadline,
+        timezone,
       });
       // Replace future planned blocks for this goal.
       await db.scheduleBlock.deleteMany({

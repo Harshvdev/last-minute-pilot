@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { assessRisk } from '@/lib/risk/assess';
-import { requireUser } from '@/lib/auth/session';
+import { requireUser, getUserTimezone } from '@/lib/auth/session';
 import type { AvailabilityRow, TaskRow, TaskStatus } from '@/lib/types';
 
 // GET /api/stats
@@ -11,6 +11,8 @@ export async function GET() {
   const userIdOrResponse = await requireUser();
   if (userIdOrResponse instanceof NextResponse) return userIdOrResponse;
   const userId = userIdOrResponse;
+
+  const userTimezone = await getUserTimezone(userId);
 
   const goals = await db.goal.findMany({
     where: { userId, status: 'active' },
@@ -119,6 +121,7 @@ export async function GET() {
 
   return NextResponse.json({
     now: now.toISOString(),
+    userTimezone,
     summary: {
       totalActiveGoals,
       totalTasks,

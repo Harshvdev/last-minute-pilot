@@ -18,6 +18,7 @@ export interface PaceInput {
   // ISO timestamps of when each task was completed (from progress logs)
   completionTimestamps: string[];
   now?: Date;
+  timezone?: string;
 }
 
 export interface PaceProjection {
@@ -75,7 +76,7 @@ export function projectPace(input: PaceInput): PaceProjection {
   } else {
     horizon = new Date(now.getTime() + HORIZON_DAYS_NO_DEADLINE * 86400000);
   }
-  const windows = expandAvailability(input.availability, now, horizon);
+  const windows = expandAvailability(input.availability, now, horizon, input.timezone);
   remainingTime = windows.reduce(
     (s, w) => s + (w.end.getTime() - w.start.getTime()) / 60000,
     0

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { assessRisk } from '@/lib/risk/assess';
-import { requireUser } from '@/lib/auth/session';
+import { requireUser, getUserTimezone } from '@/lib/auth/session';
 import type { AvailabilityRow, TaskRow, TaskStatus } from '@/lib/types';
 
 // GET /api/notifications
@@ -19,6 +19,8 @@ export async function GET() {
   const userIdOrResponse = await requireUser();
   if (userIdOrResponse instanceof NextResponse) return userIdOrResponse;
   const userId = userIdOrResponse;
+
+  const timezone = await getUserTimezone(userId);
 
   const now = new Date();
   const goals = await db.goal.findMany({
@@ -60,6 +62,7 @@ export async function GET() {
       availability,
       deadline: goal.deadline,
       now,
+      timezone,
     });
 
     // High/critical risk alert

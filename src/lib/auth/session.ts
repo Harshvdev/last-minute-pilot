@@ -76,3 +76,15 @@ export function isErrorResponse(
 ): value is NextResponse {
   return value instanceof NextResponse;
 }
+
+/**
+ * Fetch the user's timezone from the database.
+ * Defaults to 'UTC' if the user is not found or has no timezone set.
+ */
+export async function getUserTimezone(userId: string): Promise<string> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  return user?.timezone || 'UTC';
+}
