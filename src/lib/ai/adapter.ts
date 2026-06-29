@@ -11,25 +11,22 @@
 // The LLM only proposes tasks and writes explanations — scheduling + risk
 // detection are deterministic (see lib/scheduler/ + lib/risk/).
 
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import Groq from 'groq-sdk';
 import { z } from 'zod';
 import type {
-  GoalBreakdown,
-  TaskDraft,
-  GoalClarificationQuestion,
   GoalClarificationResponse,
   GoalAIResult,
 } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
-// Schemas (Zod validation before touching the database)
+// Runtime Zod Schemas (for final validation and type safety)
 // ---------------------------------------------------------------------------
 
 const TaskDraftSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional().nullable(),
-  estimatedMinutes: z.number().int().min(5).max(60 * 24),
+  estimatedMinutes: z.number().int().min(5).max(480), // Max 8 hours (aligned with prompt & schema)
   dependsOn: z.number().int().min(0).optional().nullable(),
 });
 
@@ -54,12 +51,178 @@ const RiskExplanationSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// JSON Schemas for Native Structured Outputs (Groq & Gemini)
+// ---------------------------------------------------------------------------
+
+const goalAIResultJsonSchema = {
+  type: 'object',
+  properties: {
+    confidence: {
+      type: 'string',
+      enum: ['high', 'low'],
+      description: 'Confidence in creating a precise, realistic plan. Set to "high" if you can plan, or "low" if you need clarification.',
+    },
+    question: {
+      anyOf: [
+        {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Unique camelCase/snake_case identifier for the question' },
+            text: { type: 'string', description: 'The question text to ask the user' },
+            options: {
+              anyOf: [
+                {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'List of multiple choice options',
+                },
+                { type: 'null' }
+              ],
+            },
+          },
+          required: ['id', 'text', 'options'],
+          additionalProperties: false,
+        },
+        { type: 'null' }
+      ],
+      description: 'Exactly one clarifying question if confidence is "low". Otherwise null.',
+    },
+    tasks: {
+      anyOf: [
+        {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Task title, starting with a verb (max 80 chars)' },
+              description: {
+                anyOf: [
+                  { type: 'string' },
+                  { type: 'null' }
+                ],
+                description: 'Optional task description (max 1000 chars)',
+              },
+              estimatedMinutes: { type: 'integer', description: 'Estimated minutes to complete (5 to 480)' },
+              dependsOn: {
+                anyOf: [
+                  { type: 'integer' },
+                  { type: 'null' }
+                ],
+                description: 'Optional 0-based index of prerequisite task in this array',
+              },
+            },
+            required: ['title', 'description', 'estimatedMinutes', 'dependsOn'],
+            additionalProperties: false,
+          },
+        },
+        { type: 'null' }
+      ],
+      description: 'List of tasks (1 to 12) if confidence is "high". Otherwise null.',
+    },
+    assumptions: {
+      anyOf: [
+        {
+          type: 'array',
+          items: { type: 'string' },
+        },
+        { type: 'null' }
+      ],
+      description: 'Assumptions made about the goal (e.g., target depth, format) if confidence is "high". Otherwise null.',
+    },
+    rationale: {
+      anyOf: [
+        { type: 'string' },
+        { type: 'null' }
+      ],
+      description: 'Brief rationale for the plan or the clarifying question.',
+    },
+  },
+  required: ['confidence', 'question', 'tasks', 'assumptions', 'rationale'],
+  additionalProperties: false,
+};
+
+const riskExplanationJsonSchema = {
+  type: 'object',
+  properties: {
+    headline: { type: 'string', description: 'Short warning/status headline (<= 120 chars)' },
+    body: { type: 'string', description: 'Honest, friendly explanation of the risk (<= 800 chars)' },
+    suggestedAction: {
+      anyOf: [
+        { type: 'string' },
+        { type: 'null' }
+      ],
+      description: 'Single concrete next action (<= 300 chars)',
+    },
+  },
+  required: ['headline', 'body', 'suggestedAction'],
+  additionalProperties: false,
+};
+
+// Helper to convert standard/Groq anyOf nullable schemas into Gemini-friendly nullable: true schemas
+function transformToGeminiSchema(schema: any): any {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  // Handle anyOf (specifically for nullability: anyOf: [subSchema, { type: 'null' }])
+  if (Array.isArray(schema.anyOf)) {
+    const nullIndex = schema.anyOf.findIndex((s: any) => s && s.type === 'null');
+    if (nullIndex !== -1) {
+      const nonNullSchema = schema.anyOf.find((s: any) => !s || s.type !== 'null');
+      if (nonNullSchema) {
+        const transformed = transformToGeminiSchema(nonNullSchema);
+        const { anyOf, ...rest } = schema;
+        return {
+          ...rest,
+          ...transformed,
+          nullable: true,
+        };
+      }
+    }
+  }
+
+  const result: any = { ...schema };
+
+  // Recursively transform properties of objects
+  if (result.properties) {
+    result.properties = Object.fromEntries(
+      Object.entries(result.properties).map(([key, val]) => [
+        key,
+        transformToGeminiSchema(val),
+      ])
+    );
+  }
+
+  // Recursively transform items of arrays
+  if (result.items) {
+    result.items = transformToGeminiSchema(result.items);
+  }
+
+  return result;
+}
+
+// Helper to parse JSON safely (ignoring potential markdown fences)
+function parseJsonSafe(text: string): any {
+  let s = text.trim();
+  if (s.startsWith('```')) {
+    const match = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (match) s = match[1].trim();
+  }
+  return JSON.parse(s);
+}
+
+// ---------------------------------------------------------------------------
 // Provider interface
 // ---------------------------------------------------------------------------
 
+interface SchemaConfig {
+  name: string;
+  jsonSchema: any;
+}
+
 interface AIProvider {
   name: string;
-  generateJSON(systemPrompt: string, userPrompt: string): Promise<string>;
+  generateJSON(systemPrompt: string, userPrompt: string, schemaConfig: SchemaConfig): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,14 +243,17 @@ class GeminiProvider implements AIProvider {
     return this.client;
   }
 
-  async generateJSON(systemPrompt: string, userPrompt: string): Promise<string> {
+  async generateJSON(systemPrompt: string, userPrompt: string, schemaConfig: SchemaConfig): Promise<string> {
     const client = this.getClient();
+    const geminiSchema = transformToGeminiSchema(schemaConfig.jsonSchema);
+
     const response = await client.models.generateContent({
       model: this.model,
       contents: userPrompt,
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: 'application/json',
+        responseSchema: geminiSchema,
         temperature: 0.7,
       },
     });
@@ -115,7 +281,7 @@ class GroqProvider implements AIProvider {
     return this.client;
   }
 
-  async generateJSON(systemPrompt: string, userPrompt: string): Promise<string> {
+  async generateJSON(systemPrompt: string, userPrompt: string, schemaConfig: SchemaConfig): Promise<string> {
     const client = this.getClient();
     const completion = await client.chat.completions.create({
       model: this.model,
@@ -124,7 +290,14 @@ class GroqProvider implements AIProvider {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.7,
-      response_format: { type: 'json_object' },
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: schemaConfig.name,
+          strict: true,
+          schema: schemaConfig.jsonSchema,
+        },
+      },
     });
     const content = completion.choices[0]?.message?.content ?? '';
     if (!content.trim()) throw new Error('Empty Groq response');
@@ -139,7 +312,7 @@ class GroqProvider implements AIProvider {
 class StubProvider implements AIProvider {
   name = 'Stub';
 
-  async generateJSON(systemPrompt: string, userPrompt: string): Promise<string> {
+  async generateJSON(systemPrompt: string, userPrompt: string, schemaConfig: SchemaConfig): Promise<string> {
     if (systemPrompt.includes('planning engine')) {
       const isIndianRights = userPrompt.includes('Indian civilian rights') || userPrompt.includes('indian law');
       const hasAnswers = userPrompt.includes('Question ID:') || userPrompt.includes('Answer:');
@@ -153,7 +326,10 @@ class StubProvider implements AIProvider {
             id: 'assignment_type',
             text: 'Is this a school assignment, college assignment, or professional report?',
             options: ['School assignment', 'College assignment', 'Professional report']
-          }
+          },
+          tasks: null,
+          assumptions: null,
+          rationale: 'Need to clarify assignment type.'
         });
       }
 
@@ -161,31 +337,37 @@ class StubProvider implements AIProvider {
       if (isIndianRights) {
         return JSON.stringify({
           confidence: 'high',
+          question: null,
           tasks: [
             {
               title: 'Research fundamental civilian rights under the Indian Constitution',
+              description: 'Read Part III of the Constitution, focusing on civilian rights.',
               estimatedMinutes: 180,
-              description: 'Read Part III of the Constitution, focusing on civilian rights.'
+              dependsOn: null
             },
             {
               title: 'Draft the detailed outline of the 24-page report',
+              description: 'Structure sections: Introduction, Constitutional Basis, Key Rights, Remedies, Conclusion.',
               estimatedMinutes: 90,
-              description: 'Structure sections: Introduction, Constitutional Basis, Key Rights, Remedies, Conclusion.'
+              dependsOn: 0
             },
             {
               title: 'Write the introduction and Part III analysis sections',
+              description: 'Draft pages covering civilian rights and constitutional articles.',
               estimatedMinutes: 180,
-              description: 'Draft pages covering civilian rights and constitutional articles.'
+              dependsOn: 1
             },
             {
               title: 'Write enforcement mechanisms and legal remedies sections',
+              description: 'Draft sections about article 32, habeas corpus, and other remedies.',
               estimatedMinutes: 120,
-              description: 'Draft sections about article 32, habeas corpus, and other remedies.'
+              dependsOn: 2
             },
             {
               title: 'Review, format, and edit the final document',
+              description: 'Format to 24 A4 pages and correct any errors.',
               estimatedMinutes: 90,
-              description: 'Format to 24 A4 pages and correct any errors.'
+              dependsOn: 3
             }
           ],
           assumptions: [
@@ -200,26 +382,31 @@ class StubProvider implements AIProvider {
       // Default generic fallback plan
       return JSON.stringify({
         confidence: 'high',
+        question: null,
         tasks: [
           {
             title: 'Define report scope and search legal sources',
+            description: 'Clarify exactly what needs to be done.',
             estimatedMinutes: 60,
-            description: 'Clarify exactly what needs to be done.'
+            dependsOn: null
           },
           {
             title: 'Create detailed report outline',
+            description: 'List the individual steps required.',
             estimatedMinutes: 90,
-            description: 'List the individual steps required.'
+            dependsOn: 0
           },
           {
             title: 'Draft the core content sections',
+            description: 'Start drafting the main sections of the goal.',
             estimatedMinutes: 180,
-            description: 'Start drafting the main sections of the goal.'
+            dependsOn: 1
           },
           {
             title: 'Review and iterate',
+            description: 'Check your work and adjust as needed.',
             estimatedMinutes: 90,
-            description: 'Check your work and adjust as needed.'
+            dependsOn: 2
           }
         ],
         assumptions: [
@@ -232,8 +419,7 @@ class StubProvider implements AIProvider {
     return JSON.stringify({
       headline: 'You are behind schedule',
       body: 'Based on the remaining work and available time, you may not finish by the deadline. Consider reducing scope or increasing available time blocks.',
-      suggestedAction:
-        'Re-run the scheduler to fit remaining tasks into your available time.'
+      suggestedAction: 'Re-run the scheduler to fit remaining tasks into your available time.'
     });
   }
 }
@@ -250,7 +436,8 @@ const providers: AIProvider[] = [
 
 async function generateJSONWithFallback(
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  schemaConfig: SchemaConfig
 ): Promise<string> {
   let lastError: Error | null = null;
   for (const provider of providers) {
@@ -259,7 +446,7 @@ async function generateJSONWithFallback(
       // always works).
       if (provider.name === 'Gemini' && !process.env.GEMINI_API_KEY) continue;
       if (provider.name === 'Groq' && !process.env.GROQ_API_KEY) continue;
-      return await provider.generateJSON(systemPrompt, userPrompt);
+      return await provider.generateJSON(systemPrompt, userPrompt, schemaConfig);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       // Log the failure but don't throw — try the next provider.
@@ -269,100 +456,6 @@ async function generateJSONWithFallback(
     }
   }
   throw lastError ?? new Error('All AI providers failed');
-}
-
-// ---------------------------------------------------------------------------
-// JSON sanitization (defensive parsing of LLM output)
-// ---------------------------------------------------------------------------
-
-function extractJson(raw: string): string {
-  let s = raw.trim();
-  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) s = fence[1].trim();
-  const first = s.indexOf('{');
-  const last = s.lastIndexOf('}');
-  if (first !== -1 && last !== -1 && last > first) {
-    s = s.slice(first, last + 1);
-  }
-  s = s
-    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-    .replace(/[\u201C\u201D\u201E\u201F]/g, '"');
-  s = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-  s = s.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":');
-  s = singleToDoubleQuotes(s);
-  s = s.replace(/,(\s*[}\]])/g, '$1');
-  return s;
-}
-
-function singleToDoubleQuotes(s: string): string {
-  let out = '';
-  let i = 0;
-  let inDouble = false;
-  let inSingle = false;
-  while (i < s.length) {
-    const c = s[i];
-    if (c === '\\' && (inDouble || inSingle)) {
-      out += c + (s[i + 1] ?? '');
-      i += 2;
-      continue;
-    }
-    if (c === '"' && !inSingle) {
-      inDouble = !inDouble;
-      out += '"';
-      i++;
-      continue;
-    }
-    if (c === "'" && !inDouble) {
-      inSingle = !inSingle;
-      out += '"';
-      i++;
-      continue;
-    }
-    if (c === '"' && inSingle) {
-      out += '\\"';
-      i++;
-      continue;
-    }
-    if (c === "'" && inDouble) {
-      out += "'";
-      i++;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
-}
-
-function parseLenient(text: string): unknown {
-  const cleaned = extractJson(text);
-  try {
-    return JSON.parse(cleaned);
-  } catch (e1) {
-    const lastBrace = cleaned.lastIndexOf('}');
-    if (lastBrace > 0) {
-      const candidate = cleaned.slice(0, lastBrace + 1);
-      try {
-        return JSON.parse(candidate);
-      } catch {
-        /* fall through */
-      }
-    }
-    const taskMatches = cleaned.match(/\{[^{}]*\}/g);
-    if (taskMatches && taskMatches.length > 0) {
-      const tasks = taskMatches
-        .map((m) => {
-          try {
-            return JSON.parse(extractJson(m));
-          } catch {
-            return null;
-          }
-        })
-        .filter((x): x is Record<string, unknown> => x !== null);
-      if (tasks.length > 0) return { tasks };
-    }
-    throw e1;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -387,14 +480,6 @@ export async function breakdownGoal(input: {
     'You are a planning engine for a deadline-driven productivity copilot.',
     'Your goal is to break the user\'s goal into concrete, actionable tasks, OR ask clarifying questions if confidence is low.',
     'Respond with VALID JSON ONLY — no markdown, no preamble, no comments.',
-    'Schema:',
-    '{',
-    '  "confidence": "high" | "low",',
-    '  "question": { "id": string, "text": string, "options"?: string[] } | null,',
-    '  "tasks": [{ "title": string, "description"?: string, "estimatedMinutes": number, "dependsOn"?: number }] | null,',
-    '  "assumptions": string[] | null,',
-    '  "rationale"?: string',
-    '}',
     'Rules:',
     '1. First, analyze the user\'s input. Extract what you can (e.g. deliverable, length, topic).',
     '2. If you have enough information to create a precise, realistic, non-padded plan, return confidence "high", question null, and the "tasks" array (1 to 12 tasks total).',
@@ -434,8 +519,11 @@ export async function breakdownGoal(input: {
 
   const user = userParts.filter(Boolean).join('\n');
 
-  const raw = await generateJSONWithFallback(system, user);
-  const parsed = parseLenient(raw);
+  const raw = await generateJSONWithFallback(system, user, {
+    name: 'GoalAIResult',
+    jsonSchema: goalAIResultJsonSchema,
+  });
+  const parsed = parseJsonSafe(raw);
   const validated = AIResultSchema.parse(parsed);
 
   const result: GoalAIResult = {
@@ -480,7 +568,6 @@ export async function explainRisk(input: {
     'A deterministic engine has already computed the risk level and numbers.',
     'Your job: write a SHORT, honest, friendly explanation and a single concrete next action.',
     'Respond with VALID JSON ONLY — no markdown, no preamble.',
-    'Schema: { "headline": string (<=120 chars), "body": string (<=800 chars), "suggestedAction"?: string (<=300 chars) }',
     'Tone: calm, specific, never alarmist. Use plain language. No emojis.',
   ].join('\n');
 
@@ -502,8 +589,11 @@ export async function explainRisk(input: {
     `Tasks: ${input.completedTasks}/${input.totalTasks} done`,
   ].join('\n');
 
-  const raw = await generateJSONWithFallback(system, user);
-  const parsed = parseLenient(raw);
+  const raw = await generateJSONWithFallback(system, user, {
+    name: 'RiskExplanation',
+    jsonSchema: riskExplanationJsonSchema,
+  });
+  const parsed = parseJsonSafe(raw);
   const validated = RiskExplanationSchema.parse(parsed);
   return {
     headline: validated.headline,
