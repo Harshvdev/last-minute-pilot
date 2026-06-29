@@ -328,7 +328,7 @@ export default function GoalsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
+          <Select value={sortBy} onValueChange={(val) => setSortBy(val as 'priority' | 'updated' | 'deadline' | 'progress')}>
             <SelectTrigger className="w-full sm:w-[170px]" aria-label="Sort by">
               <ArrowUpDown className="mr-1 shrink-0 h-3.5 w-3.5 text-muted-foreground" />
               <SelectValue />
@@ -407,32 +407,48 @@ export default function GoalsPage() {
                       onClick={() => toggleSelect(g.id)}
                       className="min-w-0 flex-1 text-left focus-visible:outline-none"
                     >
-                      <GoalCardContent g={g} />
+                      <GoalCardLeft g={g} />
                     </button>
                   ) : (
                     <Link
                       href={`/goals/${g.id}`}
                       className="min-w-0 flex-1 focus-visible:outline-none"
                     >
-                      <GoalCardContent g={g} />
+                      <GoalCardLeft g={g} />
                     </Link>
                   )}
-                  {!selectionMode && (
-                    <div className="flex shrink-0 items-center gap-1 sm:flex-col">
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1 text-muted-foreground hover:text-foreground"
-                      >
-                        <Link href={`/goals/${g.id}`}>Open</Link>
-                      </Button>
-                      <DeleteGoalButton
-                        onDelete={() => deleteMutation.mutate(g.id)}
-                        deleting={deleteMutation.isPending && deleteMutation.variables === g.id}
+
+                  {/* Right Column (Status + Action buttons, not nested under Link/Button) */}
+                  <div className="flex shrink-0 items-center gap-4 sm:gap-6">
+                    <div className="flex flex-col items-end gap-1">
+                      <PriorityStar goalId={g.id} priority={g.priority ?? 0} />
+                      <GoalHealthScore
+                        progress={g.progress}
+                        riskLevel={g.latestRisk?.riskLevel ?? 'low'}
+                        deadline={g.deadline}
                       />
+                      {g.latestRisk && (
+                        <RiskBadge level={g.latestRisk.riskLevel} showDot className="shrink-0" />
+                      )}
                     </div>
-                  )}
+
+                    {!selectionMode && (
+                      <div className="flex shrink-0 items-center gap-1 sm:flex-col">
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-muted-foreground hover:text-foreground"
+                        >
+                          <Link href={`/goals/${g.id}`}>Open</Link>
+                        </Button>
+                        <DeleteGoalButton
+                          onDelete={() => deleteMutation.mutate(g.id)}
+                          deleting={deleteMutation.isPending && deleteMutation.variables === g.id}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </li>
@@ -540,61 +556,48 @@ function BulkDeleteButton({
   );
 }
 
-function GoalCardContent({ g }: { g: GoalListItem }) {
+function GoalCardLeft({ g }: { g: GoalListItem }) {
   return (
-    <>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-foreground">
-              {g.title}
-            </h3>
-            {g.goalType === 'habit' && (
-              <Badge variant="outline" className="shrink-0 text-[0.625rem]">
-                Habit
-              </Badge>
-            )}
-            {g.category && (
-              <Badge variant="secondary" className="shrink-0 text-[0.625rem]">
-                {CATEGORIES.find((c) => c.value === g.category)?.label ?? g.category}
-              </Badge>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              {g.deadline
-                ? formatDeadlineRelative(g.deadline)
-                : 'No deadline'}
-            </span>
-            {g.deadline && (
-              <DeadlinePill deadline={g.deadline} />
-            )}
-            <span className="inline-flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              <span className="font-medium text-foreground">
-                {formatMinutes(g.remainingMinutes)}
-              </span>{' '}
-              left
-            </span>
-            <span>
-              <span className="font-semibold text-foreground tabular-nums">
-                {g.doneTasks}
-              </span>
-              <span className="text-muted-foreground">/{g.totalTasks} tasks</span>
-            </span>
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <PriorityStar goalId={g.id} priority={g.priority ?? 0} />
-          <GoalHealthScore
-            progress={g.progress}
-            riskLevel={g.latestRisk?.riskLevel ?? 'low'}
-            deadline={g.deadline}
-          />
-          {g.latestRisk && (
-            <RiskBadge level={g.latestRisk.riskLevel} showDot className="shrink-0" />
+    <div className="min-w-0 flex-1">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <h3 className="truncate text-sm font-semibold text-foreground">
+            {g.title}
+          </h3>
+          {g.goalType === 'habit' && (
+            <Badge variant="outline" className="shrink-0 text-[0.625rem]">
+              Habit
+            </Badge>
           )}
+          {g.category && (
+            <Badge variant="secondary" className="shrink-0 text-[0.625rem]">
+              {CATEGORIES.find((c) => c.value === g.category)?.label ?? g.category}
+            </Badge>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            {g.deadline
+              ? formatDeadlineRelative(g.deadline)
+              : 'No deadline'}
+          </span>
+          {g.deadline && (
+            <DeadlinePill deadline={g.deadline} />
+          )}
+          <span className="inline-flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            <span className="font-medium text-foreground">
+              {formatMinutes(g.remainingMinutes)}
+            </span>{' '}
+            left
+          </span>
+          <span>
+            <span className="font-semibold text-foreground tabular-nums">
+              {g.doneTasks}
+            </span>
+            <span className="text-muted-foreground">/{g.totalTasks} tasks</span>
+          </span>
         </div>
       </div>
       <div className="mt-3 flex items-center gap-3">
@@ -603,13 +606,7 @@ function GoalCardContent({ g }: { g: GoalListItem }) {
           {g.progress}%
         </span>
       </div>
-      {g.latestRisk?.suggestedAction && (
-        <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">
-          <Sparkles className="mr-1 inline h-3 w-3 text-primary" />
-          {g.latestRisk.suggestedAction}
-        </p>
-      )}
-    </>
+    </div>
   );
 }
 
