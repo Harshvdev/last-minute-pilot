@@ -791,6 +791,7 @@ export default function GoalDetailPage() {
                             }));
                           }}
                           className="text-xs h-9"
+                          maxLength={500}
                         />
                       </div>
                     </div>
@@ -1196,6 +1197,7 @@ function TaskList({ goalId, tasks }: { goalId: string; tasks: TaskDetail[] }) {
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="e.g. Write the README"
+            maxLength={200}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && newTitle.trim()) addMutation.mutate();
             }}
@@ -1294,6 +1296,7 @@ function ProgressLogger({
           onChange={(e) => setNote(e.target.value)}
           placeholder="Optional note (what you finished or hit)"
           className="h-9 text-xs"
+          maxLength={1000}
         />
         <Button
           size="sm"
@@ -1573,6 +1576,7 @@ function NotesTab({
             placeholder="Jot a note — context, decisions, blockers, links…"
             rows={3}
             className="resize-none border-0 p-0 text-sm focus-visible:ring-0"
+            maxLength={10000}
           />
           <div className="mt-2 flex items-center justify-between">
             <span className="text-[0.625rem] text-muted-foreground">
@@ -1625,6 +1629,7 @@ function NotesTab({
                     rows={3}
                     className="resize-none text-sm"
                     autoFocus
+                    maxLength={10000}
                   />
                   <div className="flex justify-end gap-1.5">
                     <Button

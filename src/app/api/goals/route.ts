@@ -81,15 +81,45 @@ export async function POST(req: NextRequest) {
     );
   }
   const d = parsed.data;
-  const goal = await db.goal.create({
-    data: {
-      userId,
-      title: d.title,
-      rawInput: d.rawInput ?? null,
-      goalType: d.goalType,
-      deadline: d.deadline ? new Date(d.deadline) : null,
-      category: d.category ?? null,
-    },
-  });
-  return NextResponse.json({ goal }, { status: 201 });
+
+  try {
+    const goal = await db.$transaction(async (tx) => {
+      // 1. Try to atomically increment the goalCount for the user
+      const updatedUser = await tx.user.updateMany({
+        where: {
+          id: userId,
+          goalCount: { lt: 5 },
+        },
+        data: {
+          goalCount: { increment: 1 },
+        },
+      });
+
+      if (updatedUser.count === 0) {
+        throw new Error('Goal limit reached');
+      }
+
+      // 2. Create the goal
+      return await tx.goal.create({
+        data: {
+          userId,
+          title: d.title,
+          rawInput: d.rawInput ?? null,
+          goalType: d.goalType,
+          deadline: d.deadline ? new Date(d.deadline) : null,
+          category: d.category ?? null,
+        },
+      });
+    });
+
+    return NextResponse.json({ goal }, { status: 201 });
+  } catch (error: any) {
+    if (error.message === 'Goal limit reached') {
+      return NextResponse.json(
+        { error: 'Goal limit reached. You can have at most 5 goals. Please delete an existing goal first.' },
+        { status: 400 }
+      );
+    }
+    throw error;
+  }
 }

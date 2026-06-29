@@ -39,6 +39,7 @@ model User {
   pushSubscriptions PushSubscription[]
 
   goals Goal[]
+  goalCount Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

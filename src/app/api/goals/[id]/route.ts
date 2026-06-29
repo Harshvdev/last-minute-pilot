@@ -95,6 +95,12 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   if (!existing) {
     return NextResponse.json({ error: 'Goal not found' }, { status: 404 });
   }
-  await db.goal.delete({ where: { id } });
+  await db.$transaction([
+    db.goal.delete({ where: { id } }),
+    db.user.update({
+      where: { id: userId },
+      data: { goalCount: { decrement: 1 } },
+    }),
+  ]);
   return NextResponse.json({ ok: true });
 }

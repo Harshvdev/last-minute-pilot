@@ -43,32 +43,60 @@ export async function POST(req: NextRequest) {
     input.title = parsed.data.title;
   }
 
-  const goal = await db.goal.create({
-    data: {
-      userId,
-      title: input.title,
-      rawInput: input.rawInput,
-      goalType: input.goalType,
-      deadline: input.deadline ? new Date(input.deadline) : null,
-      category: input.category,
-    },
-  });
+  try {
+    const goal = await db.$transaction(async (tx) => {
+      // 1. Try to atomically increment the goalCount for the user
+      const updatedUser = await tx.user.updateMany({
+        where: {
+          id: userId,
+          goalCount: { lt: 5 },
+        },
+        data: {
+          goalCount: { increment: 1 },
+        },
+      });
 
-  // Add a starter set of default availability based on the template category
-  // so the scheduler has something to work with immediately.
-  const defaultAvailability = getDefaultAvailability(template.category);
-  if (defaultAvailability.length > 0) {
-    await db.availability.createMany({
-      data: defaultAvailability.map((a) => ({
-        goalId: goal.id,
-        dayOfWeek: a.dayOfWeek,
-        startTime: a.startTime,
-        endTime: a.endTime,
-      })),
+      if (updatedUser.count === 0) {
+        throw new Error('Goal limit reached');
+      }
+
+      // 2. Create the goal
+      return await tx.goal.create({
+        data: {
+          userId,
+          title: input.title,
+          rawInput: input.rawInput,
+          goalType: input.goalType,
+          deadline: input.deadline ? new Date(input.deadline) : null,
+          category: input.category,
+        },
+      });
     });
-  }
 
-  return NextResponse.json({ goal, runBreakdown: parsed.data.runBreakdown }, { status: 201 });
+    // Add a starter set of default availability based on the template category
+    // so the scheduler has something to work with immediately.
+    const defaultAvailability = getDefaultAvailability(template.category);
+    if (defaultAvailability.length > 0) {
+      await db.availability.createMany({
+        data: defaultAvailability.map((a) => ({
+          goalId: goal.id,
+          dayOfWeek: a.dayOfWeek,
+          startTime: a.startTime,
+          endTime: a.endTime,
+        })),
+      });
+    }
+
+    return NextResponse.json({ goal, runBreakdown: parsed.data.runBreakdown }, { status: 201 });
+  } catch (error: any) {
+    if (error.message === 'Goal limit reached') {
+      return NextResponse.json(
+        { error: 'Goal limit reached. You can have at most 5 goals. Please delete an existing goal first.' },
+        { status: 400 }
+      );
+    }
+    throw error;
+  }
 }
 
 function getDefaultAvailability(category: string) {

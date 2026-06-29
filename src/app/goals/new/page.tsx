@@ -2,7 +2,8 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { useQueryClient, useMutation } from '@tanstack/react-query';
+import Link from 'next/link';
+import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -14,7 +15,9 @@ import {
   Target as TargetIcon,
   Tag,
   Plus,
+  AlertCircle,
 } from 'lucide-react';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 import { api } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -53,6 +56,13 @@ export default function NewGoalPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const prefs = usePreferences();
+
+  const { data: goalsData } = useQuery<{ goals: any[] }>({
+    queryKey: ['goals'],
+    queryFn: async () => api<{ goals: any[] }>('/api/goals'),
+  });
+  const goalCount = goalsData?.goals?.length ?? 0;
+  const isLimitReached = goalCount >= 5;
 
   const [title, setTitle] = React.useState('');
   const [rawInput, setRawInput] = React.useState('');
@@ -192,7 +202,7 @@ export default function NewGoalPage() {
     }
   };
 
-  const canSubmit = title.trim().length > 0 && !createMutation.isPending;
+  const canSubmit = title.trim().length > 0 && !createMutation.isPending && !isLimitReached;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -210,11 +220,25 @@ export default function NewGoalPage() {
         </div>
       </div>
 
+      {isLimitReached && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Goal Limit Reached (Max 5)</AlertTitle>
+          <AlertDescription className="text-xs">
+            You have reached the limit of 5 goals. To create a new goal, please delete an existing one from your{' '}
+            <Link href="/goals" className="underline font-semibold hover:opacity-85">
+              Goals list
+            </Link>.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Templates */}
       <TemplatePicker
         onUseTemplate={(t) => templateMutation.mutate(t)}
         onEditTemplate={applyTemplateToForm}
         pending={templateMutation.isPending}
+        disabled={isLimitReached}
       />
 
       <Card>
@@ -270,6 +294,7 @@ export default function NewGoalPage() {
               placeholder="I have a hackathon in 4 days, haven't started. Need a working demo by Sunday 6pm."
               rows={4}
               className={cn(listening && 'ring-2 ring-primary/40')}
+              maxLength={5000}
             />
             {listening && (
               <p className="text-xs text-primary">
@@ -402,10 +427,12 @@ function TemplatePicker({
   onUseTemplate,
   onEditTemplate,
   pending,
+  disabled,
 }: {
   onUseTemplate: (t: GoalTemplate) => void;
   onEditTemplate: (t: GoalTemplate) => void;
   pending: boolean;
+  disabled?: boolean;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const popular = GOAL_TEMPLATES.filter((t) => t.popular);
@@ -472,6 +499,7 @@ function TemplatePicker({
                     variant="ghost"
                     className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                     onClick={() => onEditTemplate(t)}
+                    disabled={disabled || pending}
                   >
                     Edit
                   </Button>
@@ -479,7 +507,7 @@ function TemplatePicker({
                     size="sm"
                     className="h-7 gap-1 px-2 text-xs"
                     onClick={() => onUseTemplate(t)}
-                    disabled={pending}
+                    disabled={disabled || pending}
                   >
                     {pending ? (
                       <Loader2 className="h-3 w-3 animate-spin" />

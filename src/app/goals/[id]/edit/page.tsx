@@ -250,6 +250,7 @@ export default function EditGoalPage() {
               onChange={(e) => setRawInput(e.target.value)}
               placeholder="Original plain-English description of the goal."
               rows={4}
+              maxLength={5000}
             />
           </div>
 

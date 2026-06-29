@@ -13,7 +13,7 @@ const BodySchema = z.object({
     .array(
       z.object({
         questionId: z.string(),
-        answer: z.string().optional().nullable(),
+        answer: z.string().max(500).optional().nullable(),
         skipped: z.boolean().optional(),
       })
     )
